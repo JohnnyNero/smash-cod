@@ -69,7 +69,7 @@ const te = new THREE.Euler();
 const ID = new THREE.Quaternion();
 
 // Build the rigged body for a CreatureModel. Returns the parts object creature.js expects.
-export function buildRig(model, id, colors, toonMaterial) {
+export function buildRig(model, id, colors, makeMat) {
   const src = GLTFS[id];
   const scene = cloneSkinned(src.scene);
   const fix = new THREE.Group();
@@ -79,7 +79,7 @@ export function buildRig(model, id, colors, toonMaterial) {
   wrap.add(fix);
   model.body.add(wrap);
 
-  // Materials -> toon (keeping the texture), registered for hit flashes and ink outlines.
+  // Materials: the model's own (or toon when that style is on), registered for hit flashes.
   const matCache = new Map();
   // Meshes skinned mainly to flame bones (Charizard's TailA chain) become glowing fire.
   const flameMat = (m) => new THREE.MeshBasicMaterial({
@@ -115,12 +115,7 @@ export function buildRig(model, id, colors, toonMaterial) {
     o.userData.sharedGeometry = true;
     const conv = (m) => {
       if (matCache.has(m)) return matCache.get(m);
-      const t = toonMaterial(m.color ? m.color.getHex() : 0xffffff, {});
-      t.map = m.map || null;
-      t.side = m.side;
-      t.transparent = m.transparent;
-      t.alphaTest = m.alphaTest;
-      t.needsUpdate = true;
+      const t = makeMat(m);
       matCache.set(m, t);
       return t;
     };

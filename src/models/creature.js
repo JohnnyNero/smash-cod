@@ -43,7 +43,10 @@ function strikeCurve(p, A, B) {
 const JOINTS = ['hips', 'torso', 'head', 'armL', 'armR', 'legL', 'legR', 'tail', 'earL', 'earR', 'kneeL', 'kneeR', 'elbowL', 'elbowR'];
 
 // Character look: 'toon' = cel-shaded with ink outlines (default), 'lowpoly' = faceted.
-export const STYLE = new URLSearchParams(typeof location !== 'undefined' ? location.search : '').get('style') === 'lowpoly' ? 'lowpoly' : 'toon';
+// Character look: 'standard' (default: the models' own materials, smooth lit), 'toon' (cel
+// shading + ink outlines, ?style=toon), 'lowpoly' (faceted procedural look, ?style=lowpoly).
+const styleParam = new URLSearchParams(typeof location !== 'undefined' ? location.search : '').get('style');
+export const STYLE = styleParam === 'toon' || styleParam === 'lowpoly' ? styleParam : 'standard';
 
 let toonRamp = null;
 function toonGradient() {
@@ -132,7 +135,7 @@ export class CreatureModel {
     this.j = {};
     // Real rigged model when it loaded, else the procedural one.
     this.parts = hasRig(species.model)
-      ? buildRig(this, species.model, colors, (c, o) => this.mat(c, o))
+      ? buildRig(this, species.model, colors, (orig) => this.rigMat(orig))
       : BUILDERS[species.model](this, colors);
     this.eyes = [];
     this.body.traverse((o) => { if (o.userData.eye) this.eyes.push(o); });
@@ -183,10 +186,31 @@ export class CreatureModel {
     const m = STYLE === 'toon'
       ? new THREE.MeshToonMaterial({ color, gradientMap: toonGradient(), emissive: o.e ?? 0x000000, emissiveIntensity: o.ei ?? 1 })
       : new THREE.MeshStandardMaterial({
-        color, roughness: o.r ?? 0.7, metalness: o.m ?? 0.05, flatShading: true,
+        color, roughness: o.r ?? 0.7, metalness: o.m ?? 0.05, flatShading: STYLE === 'lowpoly',
         emissive: o.e ?? 0x000000, emissiveIntensity: o.ei ?? 1,
       });
     if (STYLE === 'toon') addRim(m);
+    m.userData.baseEmissive = m.emissive.clone();
+    m.userData.baseIntensity = m.emissiveIntensity;
+    this.mats.push(m);
+    return m;
+  }
+
+  // A rigged model's material: its own (textured, smoothly lit) unless the toon style is on.
+  rigMat(orig) {
+    let m;
+    if (STYLE === 'toon') {
+      m = this.mat(orig.color ? orig.color.getHex() : 0xffffff);
+      m.map = orig.map || null;
+      m.side = orig.side;
+      m.transparent = orig.transparent;
+      m.alphaTest = orig.alphaTest;
+      m.needsUpdate = true;
+      return m;
+    }
+    m = orig.clone();
+    if (m.roughness !== undefined) { m.roughness = Math.max(0.55, m.roughness); m.metalness = Math.min(0.1, m.metalness); }
+    if (!m.emissive) return m;
     m.userData.baseEmissive = m.emissive.clone();
     m.userData.baseIntensity = m.emissiveIntensity;
     this.mats.push(m);

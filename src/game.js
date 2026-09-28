@@ -63,7 +63,7 @@ export class Game {
     const low = this.quality === 'low';
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.basePixelRatio = Math.min(window.devicePixelRatio || 1, low ? 1.25 : 1.75);
+    this.basePixelRatio = Math.min(window.devicePixelRatio || 1, low ? 1.5 : 2);
     this.fixedQuality = params.has('quality');
     this.dyn = { scale: 1, max: 1, avg: 1 / 60, t: 0 };
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -80,7 +80,7 @@ export class Game {
     this.composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     if (!low) {
-      this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.5, 0.82);
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.35, 0.4, 0.9); // subtle: only true highlights glow
       this.composer.addPass(this.bloom);
     }
     if (STYLE === 'toon') {
@@ -869,16 +869,18 @@ export class Game {
     q.avg += (dt - q.avg) * 0.05;
     q.t += dt;
     if (q.t < 1) return;
-    const slow = q.avg > 1 / 50;
+    // Only react to sustained real slowness, drop the bloom first, and never render below 85%
+    // resolution (lower looks blurry).
+    const slow = q.avg > 1 / 45;
     const fast = q.avg < 1 / 57;
-    if (slow && q.scale > 0.5) {
+    if (slow && this.bloom && this.bloom.enabled) {
+      this.bloom.enabled = false;
+      q.t = 0;
+    } else if (slow && q.scale > 0.85) {
       q.max = q.scale - 0.05; // never climb back to a level that was too slow (no see-sawing)
-      q.scale = Math.max(0.5, q.scale - 0.15);
+      q.scale = 0.85;
       q.t = 0;
       this.resize();
-    } else if (slow && this.bloom && this.bloom.enabled) {
-      this.bloom.enabled = false; // bloom is the next most expensive thing
-      q.t = 0;
     } else if (fast && q.t > 10 && q.scale + 0.1 <= q.max) {
       q.scale += 0.1;
       q.t = 0;
