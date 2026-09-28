@@ -38,7 +38,7 @@ function strikeCurve(p, A, B) {
   return { a, s, f, s0 };
 }
 
-const JOINTS = ['hips', 'torso', 'head', 'armL', 'armR', 'legL', 'legR', 'tail', 'earL', 'earR'];
+const JOINTS = ['hips', 'torso', 'head', 'armL', 'armR', 'legL', 'legR', 'tail', 'earL', 'earR', 'kneeL', 'kneeR', 'elbowL', 'elbowR'];
 
 // Character look: 'toon' = cel-shaded with ink outlines (default), 'lowpoly' = faceted.
 export const STYLE = new URLSearchParams(typeof location !== 'undefined' ? location.search : '').get('style') === 'lowpoly' ? 'lowpoly' : 'toon';
@@ -135,7 +135,9 @@ export class CreatureModel {
     this.eyes = [];
     this.body.traverse((o) => { if (o.userData.eye) this.eyes.push(o); });
     if (STYLE === 'toon') this.addOutlines();
-    this.feet = ['legL', 'legR'].map((n) => this.makeAnkle(this.j[n])).filter(Boolean);
+    const limbs = [['legL', 'kneeL'], ['legR', 'kneeR']];
+    if (this.parts.quadruped) limbs.push(['armL', 'elbowL'], ['armR', 'elbowR']);
+    this.feet = limbs.map(([l, k]) => this.makeAnkle(l, k)).filter(Boolean);
     this.springs = { tail: new Spring(120, 9), tailZ: new Spring(90, 8), ear: new Spring(160, 10), bob: new Spring(200, 16) };
     this.prevV = { x: 0, y: 0 };
     this.blinkT = 2 + Math.random() * 3;
@@ -209,13 +211,15 @@ export class CreatureModel {
 
   // Gather the lowest parts of a leg (foot and toes) under an ankle pivot, so feet can stay
   // flat on the ground while the leg swings.
-  makeAnkle(leg) {
+  makeAnkle(legName, kneeName) {
+    const knee = this.j[kneeName];
+    const leg = knee || this.j[legName];
     if (!leg) return null;
     const parts = leg.children.filter((c) => c.isMesh);
-    if (parts.length < 2) return null;
+    if (parts.length < (knee ? 1 : 2)) return null;
     const minY = Math.min(...parts.map((c) => c.position.y));
     const foot = parts.filter((c) => c.position.y <= minY + 0.04);
-    if (foot.length === parts.length) return null;
+    if (!knee && foot.length === parts.length) return null;
     const ankle = new THREE.Group();
     ankle.position.set(0, minY, 0);
     leg.add(ankle);
@@ -224,7 +228,8 @@ export class CreatureModel {
       f.position.y -= minY;
       ankle.add(f);
     }
-    ankle.userData.leg = leg;
+    // Segment lengths for two-bone IK (hip -> knee -> ankle).
+    ankle.userData = { leg: legName, knee: knee ? kneeName : null, L1: knee ? -knee.position.y : 0, L2: -minY };
     return ankle;
   }
 
@@ -304,6 +309,17 @@ export class CreatureModel {
       o.armR.x = s * amp * 0.85 - 0.35 * gait;
       o.armL.z = 0.12 * gait;
       o.armR.z = -0.12 * gait;
+      // Knees fold as each leg swings forward and straighten as the foot plants; elbows stay
+      // bent and pump with the arms.
+      o.kneeL.x = gait * (0.18 + 1.15 * Math.max(0, -c));
+      o.kneeR.x = gait * (0.18 + 1.15 * Math.max(0, c));
+      if (this.parts.quadruped) {
+        o.elbowL.x = gait * (0.15 + 0.9 * Math.max(0, c));
+        o.elbowR.x = gait * (0.15 + 0.9 * Math.max(0, -c));
+      } else {
+        o.elbowL.x = -(0.55 + 0.25 * s) * gait;
+        o.elbowR.x = -(0.55 - 0.25 * s) * gait;
+      }
       const lean = 0.1 * gait + 0.28 * gait * gait + pv.lean;
       o.torso.x = lean;
       o.torso.y = s * 0.22 * gait; // shoulders twist against the hips
@@ -347,9 +363,13 @@ export class CreatureModel {
         o.armR.z += idle * (-0.12 - br * 0.04);
         o.legL.x += idle * -0.12;
         o.legR.x += idle * 0.12;
+        if (!this.parts.quadruped) {
+          o.elbowL.x += idle * (-0.7 + br * 0.06); // guard up
+          o.elbowR.x += idle * (-0.85 - br * 0.06);
+        }
         o.tail.z += idle * Math.sin(t * 1.6) * 0.15;
       }
-      if (v.state === 'jumpsquat') { bodyY -= 0.1; stretch -= 0.12; o.armL.x = o.armR.x = 0.5; o.torso.x += 0.2; }
+      if (v.state === 'jumpsquat') { bodyY -= 0.12; stretch -= 0.1; o.armL.x = o.armR.x = 0.5; o.elbowL.x = o.elbowR.x = -0.3; o.torso.x += 0.25; }
       else if (v.state === 'landlag') { bodyY -= 0.08; o.torso.x += 0.25; o.armL.z = 0.5; o.armR.z = -0.5; }
     } else if (v.state === 'air' || v.state === 'helpless') {
       // Blend continuously from the rising tuck to the falling spread.
@@ -358,6 +378,9 @@ export class CreatureModel {
       const down = Math.max(0, -k);
       o.legL.x = -0.95 * up + 0.1 * down;
       o.legR.x = -0.35 * up + 0.35 * down;
+      o.kneeL.x = 1.5 * up + 0.2 * down;
+      o.kneeR.x = 0.9 * up + 0.45 * down;
+      o.elbowL.x = o.elbowR.x = -0.5 * up - 0.25 * down;
       o.armL.x = -1.9 * up - 0.3 * down;
       o.armR.x = -1.6 * up - 0.5 * down;
       o.armL.z = 0.2 * up + 0.75 * down + Math.sin(t * 7) * 0.08 * down;
@@ -374,7 +397,9 @@ export class CreatureModel {
         const tuck = Math.sin(v.flip * Math.PI);
         curl = 1 - 0.18 * tuck;
         o.legL.x = o.legR.x = -1.3 * tuck;
+        o.kneeL.x = o.kneeR.x = 1.9 * tuck; // cannonball
         o.armL.x = o.armR.x = -1.2 * tuck;
+        o.elbowL.x = o.elbowR.x = -1.2 * tuck;
         stretch = 0;
       }
       if (v.state === 'helpless') {
@@ -382,6 +407,9 @@ export class CreatureModel {
         o.torso.x = -0.25;
         o.legL.x = Math.sin(t * 6) * 0.3;
         o.legR.x = -Math.sin(t * 6) * 0.3;
+        o.kneeL.x = 0.5 + Math.sin(t * 6) * 0.3;
+        o.kneeR.x = 0.5 - Math.sin(t * 6) * 0.3;
+        o.elbowL.x = o.elbowR.x = -0.2;
       }
     } else if (v.state === 'shield') {
       bodyY = -0.08;
@@ -391,6 +419,7 @@ export class CreatureModel {
       o.torso.x = 0.3;
       o.head.x = -0.2;
       o.legL.x = -0.3; o.legR.x = 0.3;
+      o.elbowL.x = o.elbowR.x = -1.3; // arms crossed in front
     } else if (v.state === 'shieldbreak') {
       o.torso.x = -0.4 + Math.sin(t * 5) * 0.12;
       o.head.z = Math.sin(t * 3.5) * 0.35;
@@ -411,12 +440,19 @@ export class CreatureModel {
       o.armL.z = 0.5; o.armR.z = -0.5;
       o.legL.x = 0.4 + Math.sin(t * 7) * 0.35;
       o.legR.x = -0.2 - Math.sin(t * 7) * 0.35;
+      o.kneeL.x = 0.6 + Math.sin(t * 7) * 0.4;
+      o.kneeR.x = 0.9 - Math.sin(t * 7) * 0.4;
+      o.elbowL.x = -0.4 - Math.sin(t * 9) * 0.3;
+      o.elbowR.x = -0.6 - Math.cos(t * 8) * 0.3;
       o.tail.x = 0.8 * back;
       stretch = v.flash * 0.1;
     } else if (v.state === 'ledge') {
       o.armL.x = o.armR.x = -3.0;
-      o.legL.x = Math.sin(t * 2.5) * 0.25;
-      o.legR.x = -Math.sin(t * 2.5) * 0.25;
+      o.legL.x = -0.3 + Math.sin(t * 2.5) * 0.25;
+      o.legR.x = -0.3 - Math.sin(t * 2.5) * 0.25;
+      o.kneeL.x = 0.9 - Math.sin(t * 2.5) * 0.3;
+      o.kneeR.x = 0.9 + Math.sin(t * 2.5) * 0.3;
+      o.elbowL.x = o.elbowR.x = -0.35;
       o.torso.x = 0.1;
       o.head.x = -0.3;
     } else if (v.state === 'getup') {
@@ -434,11 +470,15 @@ export class CreatureModel {
       bodyY = -this.h * 0.3 + Math.sin(t * 2) * 0.02;
       stretch = Math.sin(t * 2) * 0.03;
       o.armL.z = 0.6; o.armR.z = -0.6;
+      o.kneeL.x = 0.7; o.kneeR.x = 0.3;
+      o.elbowL.x = o.elbowR.x = -0.9;
     } else if (v.state === 'held') {
       o.armL.x = -2.5 + Math.sin(t * 11) * 0.35;
       o.armR.x = -2.5 + Math.cos(t * 11) * 0.35;
       o.legL.x = Math.sin(t * 10) * 0.6;
       o.legR.x = -Math.sin(t * 10) * 0.6;
+      o.kneeL.x = 0.6 + Math.sin(t * 10) * 0.5;
+      o.kneeR.x = 0.6 - Math.sin(t * 10) * 0.5;
       o.head.z = Math.sin(t * 6) * 0.2;
     }
 
@@ -461,13 +501,19 @@ export class CreatureModel {
           o.torso.y = -0.35 * a + 0.5 * s;
           o.torso.x = 0.05 * a + 0.2 * s;
           o.head.y = 0.2 * a - 0.25 * s;
+          o.elbowR.x = -1.5 * a - 0.9 * (1 - s) * (1 - a); // chambered, then punches straight
+          o.elbowL.x = -1.0;
           o.legL.x = -0.35; o.legR.x = 0.3;
+          o.kneeL.x = 0.25; o.kneeR.x = 0.35;
           lunge = 0.1 * s;
           break;
         case 'ftilt':
         case 'ledgeAttack':
-          o.legR.x = 0.6 * a - 1.8 * s - 0.2 * f;
+          o.legR.x = -0.5 * a - 1.8 * s - 0.2 * f;
+          o.kneeR.x = 1.7 * a + 0.1 * (1 - s); // knee chambers up, then the kick snaps out
           o.legL.x = 0.15 * s;
+          o.kneeL.x = 0.3;
+          o.elbowL.x = o.elbowR.x = -0.8;
           o.torso.x = 0.15 * a - 0.45 * s;
           o.torso.y = -0.2 * a + 0.3 * s;
           o.armL.x = 0.4 * a - 0.9 * s;
@@ -479,6 +525,7 @@ export class CreatureModel {
           o.tail.x = -0.6 * a + 2.5 * s + 0.3 * f;
           o.torso.x = 0.3 * a - 0.45 * s;
           o.armL.x = o.armR.x = 0.3 * a - 1.4 * s;
+          o.elbowL.x = o.elbowR.x = -0.8 * a - 0.3 * s;
           o.head.x = 0.15 * a - 0.45 * s;
           bodyY = -0.07 * a + 0.05 * s;
           stretch = -0.08 * a + 0.1 * s;
@@ -487,8 +534,10 @@ export class CreatureModel {
           const crouch = Math.max(a, s, ramp(p, 0, 0.12) * (1 - ramp(p, B, 1)));
           bodyY = -0.16 * crouch;
           stretch = -0.1 * crouch;
-          o.legR.x = 0.5 * a - 1.5 * s;
+          o.legR.x = -0.2 * a - 1.4 * s;
+          o.kneeR.x = 1.2 * a + 0.2 * (1 - s);
           o.legL.x = -0.4 * crouch;
+          o.elbowL.x = o.elbowR.x = -0.6 * crouch;
           o.torso.x = 0.55 * crouch;
           o.head.x = -0.45 * crouch;
           o.tail.x = 1.1 * s;
@@ -501,6 +550,8 @@ export class CreatureModel {
           o.head.x = -0.2 * a - 0.7 * s;
           o.armL.x = o.armR.x = -0.5 * a + 1.0 * s;
           o.legL.x = -0.3 * s; o.legR.x = 0.8 * s;
+          o.kneeL.x = 0.5 * s + 0.3 * a; o.kneeR.x = 0.9 * s;
+          o.elbowL.x = o.elbowR.x = -0.9 * a - 0.2 * s;
           curl = 1 - 0.08 * s;
           lunge = 0.18 * s;
           stretch = 0.08 * s;
@@ -512,6 +563,9 @@ export class CreatureModel {
           o.head.x = -0.25 * a + 0.35 * s;
           o.legL.x = 0.1 * a - 0.6 * s;
           o.legR.x = 0.35 * a + 0.55 * s;
+          o.kneeL.x = 0.4 * a + 0.5 * s; // front knee takes the weight
+          o.kneeR.x = 0.6 * a + 0.1 * s;
+          o.elbowL.x = o.elbowR.x = -1.4 * a - 0.15 * s; // arms cocked back, then thrown straight
           o.tail.x = 0.6 * a - 0.4 * s;
           bodyY += -0.07 * a;
           stretch = -0.07 * a + 0.05 * s;
@@ -524,6 +578,8 @@ export class CreatureModel {
           rotX = v.charging ? 0.25 : -Math.PI * 2 * easeOutCubic(ramp(p, k.s0, B + (1 - B) * 0.3));
           o.tail.x = 1.6 * s;
           o.armL.x = o.armR.x = 0.6 * a - 2.4 * s;
+          o.kneeL.x = o.kneeR.x = 1.0 * a + 0.6 * s;
+          o.elbowL.x = o.elbowR.x = -0.8 * a;
           curl = 1 - 0.15 * s - 0.08 * a;
           break;
         case 'dsmash':
@@ -531,6 +587,7 @@ export class CreatureModel {
           curl = 1 - 0.12 * a - 0.18 * s;
           bodyY += -0.1 * a - 0.04 * s;
           o.legL.x = -0.8 * s; o.legR.x = 0.8 * s;
+          o.kneeL.x = o.kneeR.x = 0.9 * a + 0.5 * s;
           o.armL.z = 0.3 * a + 1.2 * s; o.armR.z = -0.3 * a - 1.2 * s;
           aura = s * (1 - ramp(p, B, 1));
           break;
@@ -540,15 +597,19 @@ export class CreatureModel {
           rotX = -sweep(0, Math.PI * 2);
           o.armL.z = 1.2 * s; o.armR.z = -1.2 * s;
           o.legL.x = -0.6 * a; o.legR.x = -0.6 * a;
+          o.kneeL.x = o.kneeR.x = 1.4 * a + 0.4 * s;
           break;
         case 'fair':
           rotX = sweep(0, Math.PI * 2);
           curl = 1 - 0.12 * a - 0.2 * s;
           o.armL.x = o.armR.x = -2.2 * a + 0.8 * s;
+          o.elbowL.x = o.elbowR.x = -1.0 * a;
+          o.kneeL.x = o.kneeR.x = 1.5 * (a + s * 0.6);
           o.tail.x = -0.8 * a + 1.2 * s;
           break;
         case 'bair':
           o.legL.x = o.legR.x = -0.6 * a + 1.6 * s + 0.2 * f;
+          o.kneeL.x = o.kneeR.x = 1.8 * a + 0.1 * (1 - s); // tucked, then a two-footed donkey kick
           o.torso.x = -0.25 * a + 0.55 * s;
           o.head.y = 0.5 * s;
           o.head.x = -0.3 * s;
@@ -562,11 +623,13 @@ export class CreatureModel {
           o.armL.x = o.armR.x = 0.4 * a - 2.4 * s;
           o.head.x = -0.5 * s;
           o.legL.x = o.legR.x = -0.6 * a + 0.3 * s;
+          o.kneeL.x = o.kneeR.x = 1.2 * a + 0.3;
           break;
         case 'dair':
           rotY = sweep(0, Math.PI * 6);
           o.armL.x = o.armR.x = -1.5 * a - 3 * s;
           o.legL.x = o.legR.x = -1.0 * a;
+          o.kneeL.x = o.kneeR.x = 1.4 * a;
           curl = 1 - 0.15 * a;
           stretch = 0.12 * s;
           aura = s * (1 - ramp(p, B, 1));
@@ -574,6 +637,8 @@ export class CreatureModel {
         case 'grab':
           o.armL.x = o.armR.x = 0.3 * a - 1.7 * s;
           o.armL.z = 0.2 * a; o.armR.z = -0.2 * a;
+          o.elbowL.x = o.elbowR.x = -1.2 * a - 0.2 * s;
+          o.kneeL.x = 0.3; o.kneeR.x = 0.5 * s;
           o.torso.x = -0.1 * a + 0.4 * s;
           o.head.x = -0.3 * s;
           lunge = 0.15 * s;
@@ -604,8 +669,10 @@ export class CreatureModel {
           o.torso.x = -0.3 * a + 0.35 * s;
           o.torso.y = -0.2 * a + 0.1 * s;
           o.armL.x = o.armR.x = 0.6 * a - 1.5 * s;
+          o.elbowL.x = o.elbowR.x = -1.3 * a - 0.2 * s;
           o.head.x = -0.2 * a + 0.1 * s;
           o.legL.x = -0.3 * s; o.legR.x = 0.3 * s;
+          o.kneeL.x = 0.2 + 0.3 * s; o.kneeR.x = 0.3;
           lunge = -0.05 * a + 0.08 * s;
           aura = 0.3 * a + 0.5 * s * (1 - ramp(p, B, 1));
           break;
@@ -622,6 +689,7 @@ export class CreatureModel {
           if (v.zipDir) spin = (Math.atan2(v.zipDir.y, Math.abs(v.zipDir.x)) - Math.PI / 2) * (v.facing > 0 ? 1 : -1);
           o.armL.x = o.armR.x = 1.2;
           o.legL.x = o.legR.x = 1.2;
+          o.kneeL.x = o.kneeR.x = 0.3;
           break;
         case 'tailslam':
           rotX = sweep(0, Math.PI * 2);
@@ -750,6 +818,12 @@ export class CreatureModel {
       }
     }
 
+    // Venusaur's front legs are its "arms": their elbows only fold backwards, like knees.
+    if (this.parts.quadruped && v.state === 'attack') {
+      o.elbowL.x = Math.abs(o.elbowL.x) * 0.4;
+      o.elbowR.x = Math.abs(o.elbowR.x) * 0.4;
+    }
+
     // ---- victory pose on the results screen
     if (v.victory) {
       const hop = Math.abs(Math.sin(t * 5));
@@ -760,7 +834,26 @@ export class CreatureModel {
       o.head.x = -0.3;
       o.tail.x = Math.sin(t * 8) * 0.5;
       o.legL.x = o.legR.x = -0.4 * (1 - hop);
+      o.kneeL.x = o.kneeR.x = 0.9 * (1 - hop);
+      o.elbowL.x = o.elbowR.x = -0.3;
       rotY = Math.sin(t * 2) * 0.4;
+    }
+
+    // ---- two-bone IK: when the body dips while standing, the knees bend so the feet stay on
+    // the floor instead of sinking into it (crouches, landings, wind-ups, the idle breath).
+    const standing = (grounded || v.state === 'shield' || v.state === 'holding' || (v.grounded && (v.state === 'attack' || v.state === 'dodge')))
+      && v.state !== 'sleep' && !v.victory;
+    if (standing && bodyY < 0) {
+      for (const ankle of this.feet) {
+        const { leg, knee, L1, L2 } = ankle.userData;
+        if (!knee || L1 <= 0 || L2 <= 0) continue;
+        const D0 = L1 + L2;
+        const D = D0 - Math.min(-bodyY, D0 * 0.55);
+        const hip = Math.acos(Math.max(-1, Math.min(1, (L1 * L1 + D * D - L2 * L2) / (2 * L1 * D))));
+        const bendK = Math.PI - Math.acos(Math.max(-1, Math.min(1, (L1 * L1 + L2 * L2 - D * D) / (2 * L1 * L2))));
+        o[leg].x -= hip;
+        o[knee].x += bendK;
+      }
     }
 
     // ---- secondary motion: tails, ears and wings lag behind the body's acceleration
@@ -821,8 +914,8 @@ export class CreatureModel {
     // they point their toes a little.
     const plant = grounded ? 0.85 : 0;
     for (const ankle of this.feet) {
-      const leg = ankle.userData.leg;
-      const swing = this.cur[leg === this.j.legL ? 'legL' : 'legR'].x;
+      const u = ankle.userData;
+      const swing = this.cur[u.leg].x + (u.knee ? this.cur[u.knee].x : 0);
       ankle.rotation.x = damp(ankle.rotation.x, -swing * plant + (grounded ? 0 : 0.35), 30, dt);
     }
     pv.bodyY = damp(pv.bodyY, bodyY, atk ? 30 : 20, dt);

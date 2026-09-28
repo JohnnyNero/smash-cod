@@ -37,6 +37,22 @@ const at = (obj, x, y, z, rx = 0, ry = 0, rz = 0) => {
   return obj;
 };
 
+// Split a limb at height y (in the limb's space): everything below hangs from a new joint
+// (knee or elbow) so the limb can bend there. A ball covers the seam.
+function bend(limb, y, cover) {
+  const g = group(0, y, 0);
+  for (const c of [...limb.children]) {
+    if (c.position.y < y) {
+      limb.remove(c);
+      c.position.y -= y;
+      g.add(c);
+    }
+  }
+  if (cover) g.add(cover);
+  limb.add(g);
+  return g;
+}
+
 // Shared: a pair of eyes (dark with a glint) on a head group.
 function eyes(head, M, x, y, z, r = 0.05, color) {
   for (const side of [-1, 1]) {
@@ -76,6 +92,7 @@ function pikachu(model, colors) {
     leg.add(foot);
     hips.add(leg);
     j[side < 0 ? 'legR' : 'legL'] = leg;
+    j[side < 0 ? 'kneeR' : 'kneeL'] = bend(leg, -0.08);
   }
 
   const torso = group(0, 0, 0);
@@ -123,8 +140,10 @@ function pikachu(model, colors) {
 
   for (const side of [-1, 1]) {
     const arm = group(side * 0.2, 0.3, 0.1);
-    arm.add(at(cap(0.048, 0.12, M.yellow), 0, -0.08, 0));
-    arm.add(ball(0.055, M.yellow, 1, 1, 1, 8)).position.set(0, -0.18, 0);
+    arm.add(at(cap(0.048, 0.05, M.yellow), 0, -0.05, 0));
+    arm.add(at(cap(0.045, 0.05, M.yellow), 0, -0.15, 0));
+    arm.add(ball(0.055, M.yellow, 1, 1, 1, 8)).position.set(0, -0.21, 0);
+    j[side < 0 ? 'elbowR' : 'elbowL'] = bend(arm, -0.1, ball(0.046, M.yellow));
     arm.rotation.x = -0.4;
     torso.add(arm);
     j[side < 0 ? 'armR' : 'armL'] = arm;
@@ -205,6 +224,7 @@ function charizard(model, colors) {
     for (const c of [-1, 0, 1]) leg.add(at(cone(0.03, 0.1, M.white, 5), c * 0.06, -0.52, 0.34, Math.PI / 2));
     hips.add(leg);
     j[side < 0 ? 'legR' : 'legL'] = leg;
+    j[side < 0 ? 'kneeR' : 'kneeL'] = bend(leg, -0.22, ball(0.115, M.orange));
   }
   const torso = group();
   hips.add(torso);
@@ -233,9 +253,11 @@ function charizard(model, colors) {
   for (const side of [-1, 1]) {
     const arm = group(side * 0.36, 0.68, 0.12);
     arm.add(at(ball(0.1, M.orange), 0, 0, 0)); // shoulder
-    arm.add(at(cap(0.07, 0.24, M.orange), 0, -0.17, 0));
-    arm.add(at(ball(0.085, M.orange, 1, 0.9, 1.1), 0, -0.36, 0.02));
-    for (const c of [-1, 0, 1]) arm.add(at(cone(0.022, 0.08, M.white, 5), c * 0.045, -0.42, 0.07, 2.4));
+    arm.add(at(cap(0.07, 0.08, M.orange), 0, -0.1, 0));
+    arm.add(at(cap(0.064, 0.08, M.orange), 0, -0.3, 0));
+    arm.add(at(ball(0.085, M.orange, 1, 0.9, 1.1), 0, -0.42, 0.02));
+    for (const c of [-1, 0, 1]) arm.add(at(cone(0.022, 0.08, M.white, 5), c * 0.045, -0.48, 0.07, 2.4));
+    j[side < 0 ? 'elbowR' : 'elbowL'] = bend(arm, -0.2, ball(0.068, M.orange));
     arm.rotation.x = -0.5;
     torso.add(arm);
     j[side < 0 ? 'armR' : 'armL'] = arm;
@@ -301,6 +323,7 @@ function blastoise(model, colors) {
     leg.add(at(ball(0.17, M.blue, 1, 0.5, 1.4), 0, -0.4, 0.08));
     hips.add(leg);
     j[side < 0 ? 'legR' : 'legL'] = leg;
+    j[side < 0 ? 'kneeR' : 'kneeL'] = bend(leg, -0.26, ball(0.15, M.blue));
   }
   const torso = group();
   hips.add(torso);
@@ -333,8 +356,10 @@ function blastoise(model, colors) {
   }
   for (const side of [-1, 1]) {
     const arm = group(side * 0.5, 0.62, 0.05);
-    arm.add(at(cyl(0.11, 0.1, 0.32, M.blue), 0, -0.14, 0));
-    arm.add(at(ball(0.12, M.blue), 0, -0.32, 0));
+    arm.add(at(cap(0.11, 0.06, M.blue), 0, -0.08, 0));
+    arm.add(at(cap(0.1, 0.05, M.blue), 0, -0.25, 0));
+    arm.add(at(ball(0.12, M.blue), 0, -0.36, 0));
+    j[side < 0 ? 'elbowR' : 'elbowL'] = bend(arm, -0.17, ball(0.1, M.blue));
     arm.rotation.x = -0.3;
     torso.add(arm);
     j[side < 0 ? 'armR' : 'armL'] = arm;
@@ -381,10 +406,13 @@ function venusaur(model, colors) {
     for (const c of [-1, 1]) leg.add(at(cone(0.03, 0.08, M.white, 5), c * 0.06, -0.45, 0.26, Math.PI / 2));
     hips.add(leg);
     j[side < 0 ? 'legR' : 'legL'] = leg;
+    j[side < 0 ? 'kneeR' : 'kneeL'] = bend(leg, -0.2, ball(0.15, M.teal));
     const front = group(side * 0.38, 0.05, 0.4);
-    front.add(at(cap(0.15, 0.24, M.teal), 0, -0.24, 0));
+    front.add(at(cap(0.155, 0.06, M.teal), 0, -0.1, 0));
+    front.add(at(cap(0.148, 0.06, M.teal), 0, -0.33, 0));
     front.add(at(ball(0.17, M.teal, 1, 0.5, 1.3), 0, -0.47, 0.06));
     for (const c of [-1, 1]) front.add(at(cone(0.03, 0.08, M.white, 5), c * 0.06, -0.5, 0.26, Math.PI / 2));
+    j[side < 0 ? 'elbowR' : 'elbowL'] = bend(front, -0.22, ball(0.15, M.teal));
     torso.add(front);
     j[side < 0 ? 'armR' : 'armL'] = front;
   }
@@ -422,7 +450,7 @@ function venusaur(model, colors) {
   flower.add(at(ball(0.13, M.yellow, 1, 0.8, 1, 8), 0, 0.42, 0));
   torso.add(flower);
   j.tail = flower;
-  return {};
+  return { quadruped: true }; // front legs are the "arms": elbows bend like knees
 }
 
 function gengar(model, colors) {
@@ -444,6 +472,7 @@ function gengar(model, colors) {
     leg.add(at(ball(0.13, M.purple, 1, 0.5, 1.5), 0, -0.2, 0.06));
     hips.add(leg);
     j[side < 0 ? 'legR' : 'legL'] = leg;
+    j[side < 0 ? 'kneeR' : 'kneeL'] = bend(leg, -0.13);
   }
   const torso = group();
   hips.add(torso);
@@ -480,8 +509,10 @@ function gengar(model, colors) {
   }
   for (const side of [-1, 1]) {
     const arm = group(side * 0.5, 0.4, 0.1);
-    arm.add(at(cyl(0.08, 0.07, 0.24, M.purple), 0, -0.1, 0));
-    for (const c of [-1, 0, 1]) arm.add(at(cone(0.03, 0.09, M.purple, 5), c * 0.04, -0.26, 0.02, Math.PI));
+    arm.add(at(cap(0.08, 0.04, M.purple), 0, -0.06, 0));
+    arm.add(at(cap(0.07, 0.04, M.purple), 0, -0.19, 0));
+    for (const c of [-1, 0, 1]) arm.add(at(cone(0.03, 0.09, M.purple, 5), c * 0.04, -0.3, 0.02, Math.PI));
+    j[side < 0 ? 'elbowR' : 'elbowL'] = bend(arm, -0.12, ball(0.07, M.purple));
     arm.rotation.z = side * 0.3;
     torso.add(arm);
     j[side < 0 ? 'armR' : 'armL'] = arm;
@@ -521,6 +552,7 @@ function lucario(model, colors) {
     leg.add(at(ball(1, M.black, 0.075, 0.05, 0.14), 0, -0.7, 0.05));
     hips.add(leg);
     j[side < 0 ? 'legR' : 'legL'] = leg;
+    j[side < 0 ? 'kneeR' : 'kneeL'] = bend(leg, -0.24, ball(0.07, M.blue));
   }
   const torso = group();
   hips.add(torso);
@@ -565,9 +597,11 @@ function lucario(model, colors) {
   for (const side of [-1, 1]) {
     const arm = group(side * 0.23, 0.43, 0);
     arm.add(at(ball(0.075, M.blue), 0, 0, 0));
-    arm.add(at(cap(0.055, 0.18, M.blue), 0, -0.14, 0));
-    arm.add(at(ball(1, M.black, 0.065, 0.075, 0.065), 0, -0.3, 0.01));
-    arm.add(at(cone(0.028, 0.12, M.steel, 6), 0, -0.28, -0.08, -Math.PI / 2));
+    arm.add(at(cap(0.055, 0.07, M.blue), 0, -0.08, 0));
+    arm.add(at(cap(0.05, 0.07, M.blue), 0, -0.24, 0));
+    arm.add(at(ball(1, M.black, 0.065, 0.075, 0.065), 0, -0.34, 0.01));
+    arm.add(at(cone(0.028, 0.12, M.steel, 6), 0, -0.3, -0.08, -Math.PI / 2));
+    j[side < 0 ? 'elbowR' : 'elbowL'] = bend(arm, -0.16, ball(0.052, M.blue));
     torso.add(arm);
     j[side < 0 ? 'armR' : 'armL'] = arm;
   }

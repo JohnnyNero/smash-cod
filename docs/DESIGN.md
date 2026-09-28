@@ -191,6 +191,22 @@ This is the source of truth for decisions. Update it when a decision changes.
   with steel spikes, a bushy tail. Charizard gets shoulders and clawed hands; Venusaur gets haunches,
   capsule legs with toes and frond-shaped leaves.
 
+## Knees & elbows
+
+- Every limb is split into upper and lower segments at a real joint (`bend()` in species.js adds
+  a knee/elbow pivot and a ball to cover the seam); joints `kneeL/R` and `elbowL/R` animate like
+  the rest.
+- Run: knees fold as each leg swings through and straighten as the foot plants; elbows stay bent
+  and pump. Jumps tuck the knees, the double-jump flip is a cannonball, the idle holds a guard.
+- Attacks chamber and extend: the jab's elbow snaps straight, forward tilt chambers the knee then
+  kicks out, back air is a tucked two-footed kick, smashes cock the arms back.
+- Two-bone IK: whenever the body dips while standing (crouch, landing, wind-up, breathing), hips
+  and knees bend so the feet stay on the floor; ankles counter the whole leg to stay flat.
+- Venusaur's front legs are its "arms", so its elbows fold like knees.
+
+Movement research (frame data, game-feel, procedural animation, and a prioritized change list):
+see [MOVEMENT_RESEARCH.md](MOVEMENT_RESEARCH.md).
+
 ### Ideas after v1
 
 Tera (once per match), switch-in resist rewards, abilities, items (Choice Band, Leftovers, Life Orb,
