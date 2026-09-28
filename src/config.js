@@ -31,13 +31,19 @@ export const COMBAT = {
   resisted: 0.6, // Showdown 0.5x
   hitstunPerLaunch: 0.03, // seconds of hitstun per unit of launch speed
   tumbleAt: 11, // launch speeds above this make you tumble
+  baseKbMult: 1, // base knockback is not reduced by weight (only the % growth is)
+  diMaxDeg: 12, // DI: how far the stick can bend a launch (Ultimate ~9.7, Melee 18)
+  asdi: 0.15, // ASDI: position nudge in the stick direction when hitlag ends
   hitstopBase: 3,
   hitstopPerDamage: 0.6,
   hitstopMax: 20,
   smashChargeFrames: 60,
   smashChargeBonus: 0.4, // fully charged smash = 1.4x damage
   flickFrames: 5, // tap direction + attack within this many frames = smash attack
-  techWindow: 20, // press shield this many frames before landing to tech
+  techWindow: 14, // press shield this many frames before landing to tech
+  techLockout: 30, // ...but a press within this many frames of the previous one doesn't count
+  staleFactors: [0.08, 0.076, 0.068, 0.06, 0.053, 0.045, 0.038, 0.03, 0.022], // Ultimate's queue
+  freshBonus: 1.05,
 };
 
 export const SHIELD = {
@@ -46,6 +52,9 @@ export const SHIELD = {
   regen: 0.08, // per frame while not held
   damageMult: 1.2,
   breakFrames: 180,
+  dropFrames: 8, // letting go of shield (Ultimate: 11); jump is still allowed
+  // Shieldstun = floor(0.8 x damage x mult + 2) by move kind (Ultimate's multipliers).
+  stunMult: { ground: 1, smash: 0.725, aerial: 0.33, projectile: 0.29 },
 };
 
 export const DODGE = {

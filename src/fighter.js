@@ -93,7 +93,7 @@ export class Fighter {
   setState(s) {
     this.state = s;
     this.sf = 0;
-    if (s !== 'ground') { this.dashF = 0; this.skidF = 0; }
+    if (s !== 'ground') { this.dashF = 0; this.skidF = 0; this.shieldDropF = 0; }
   }
 
   // Input buffer: an action that uses a press clears it so it can't fire twice.
@@ -160,6 +160,7 @@ export class Fighter {
         this.runMove();
         break;
       case 'landlag':
+        if (this.knockdown && this.sf >= 10 && canAct && this.knockdownOptions()) break;
         // A plain landing can be jumped or shielded out of straight away.
         if (this.sf >= this.landLagF || (this.softLand && (this.inp.pressed.jump || this.inp.held.shield))) {
           this.toNeutral();
@@ -228,7 +229,11 @@ export class Fighter {
     this.prevMag = mag;
     this.sx = x;
     this.sy = y;
-    if (inp.pressed.shield) this.shieldPressedAt = this.t;
+    // Tech input: only a press that isn't part of mashing counts (lockout after any press).
+    if (inp.pressed.shield) {
+      if (this.t - (this.lastShieldPress ?? -99) >= COMBAT.techLockout / 60) this.shieldPressedAt = this.t;
+      this.lastShieldPress = this.t;
+    }
     // Buffer presses for a few frames so one made during lag (landing, end of a move,
     // jumpsquat) comes out on the first frame you can act instead of being lost.
     this.rawPressed = inp.pressed;
@@ -264,6 +269,13 @@ export class Fighter {
   groundControl() {
     const inp = this.inp;
     const n = this.moveset.normals;
+    if (this.shieldDropF > 0) {
+      this.shieldDropF--;
+      this.vel.x = approach(this.vel.x, 0, PHYS.groundFriction * DT);
+      if (inp.pressed.jump) { this.consume('jump'); this.shieldDropF = 0; this.setState('jumpsquat'); }
+      else if (inp.held.shield) { this.shieldDropF = 0; this.setState('shield'); } // re-shield
+      return;
+    }
     if (inp.pressed.swap && this.tryStartSwitch()) return;
     if (inp.pressed.jump) { this.consume('jump'); this.setState('jumpsquat'); return; }
     if (inp.pressed.grab || (inp.held.shield && inp.pressed.attack)) { this.startMove(n.grab); return; }
@@ -427,6 +439,7 @@ export class Fighter {
   startMove(m) {
     if (this.inp) this.consume('attack', 'special', 'grab', 'smash');
     this.move = m;
+    this.moveSerial = (this.moveSerial || 0) + 1;
     this.moveF = 0;
     this.curF = -1;
     this.hitTimes = new Map();
@@ -583,6 +596,7 @@ export class Fighter {
 
   landLag(frames) {
     this.softLand = false;
+    this.knockdown = false;
     this.move = null;
     this.zip = null;
     this.landLagF = frames;
@@ -602,7 +616,15 @@ export class Fighter {
       return;
     }
     if (this.flickT === 0 && this.flickY < -0.7) { this.startDodge('spot'); return; }
-    if (!inp.held.shield) { this.setState('ground'); return; }
+    // Out of shield: up-special and up-smash come straight out (like jump and grab).
+    if (inp.pressed.special && this.sy > 0.5) { this.startSpecial(); return; }
+    const sm = this.smashDir();
+    if (sm && sm.y > 0.5) { this.startMove(this.moveset.normals.usmash); return; }
+    if (!inp.held.shield) {
+      this.setState('ground');
+      this.shieldDropF = SHIELD.dropFrames; // dropping shield isn't free
+      return;
+    }
     this.shieldHP -= SHIELD.drain;
     if (this.shieldHP <= 0) this.breakShield();
   }
@@ -762,8 +784,23 @@ export class Fighter {
   // ------------------------------------------------------------------ hitstun & ledges
 
   hitstunControl() {
+    if (this.diPending) {
+      // DI: the stick held as hitlag ends bends the launch angle (most when perpendicular to it);
+      // ASDI nudges your position a little in the stick direction.
+      this.diPending = false;
+      const mag = Math.min(1, Math.hypot(this.sx, this.sy));
+      const speed = Math.hypot(this.vel.x, this.vel.y);
+      if (mag > 0.3 && speed > 1) {
+        const th = Math.atan2(this.vel.y, this.vel.x);
+        const st = Math.atan2(this.sy, this.sx);
+        const nt = th + (COMBAT.diMaxDeg * Math.PI / 180) * Math.sin(st - th) * mag;
+        this.vel.x = Math.cos(nt) * speed;
+        this.vel.y = Math.sin(nt) * speed;
+        this.pos.x += (this.sx / mag) * COMBAT.asdi * mag;
+        this.pos.y += (this.sy / mag) * COMBAT.asdi * mag * (this.grounded ? 0 : 1);
+      }
+    }
     this.hitstun -= DT;
-    if (this.sx) this.vel.x += this.sx * 4 * DT; // a little directional influence
     if (this.hitstun <= 0) this.toNeutral();
   }
 
@@ -989,7 +1026,8 @@ export class Fighter {
       }
       this.touchDown(platform, impact);
       this.hitstun = 0;
-      this.landLag(24); // knocked down
+      this.landLag(24); // knocked down: roll, get up or getup-attack out of it
+      this.knockdown = true;
       return top;
     }
     const st = this.state;
@@ -1163,13 +1201,52 @@ export class Fighter {
 
   // hit: { damage, kb, grow, ang, dirSign, attacker, source, throw }
   // Returns { result: 'hit' | 'blocked' | 'miss', launch }.
+  // Missed tech: from the ground, roll either way, get up attacking, or just stand up.
+  knockdownOptions() {
+    const inp = this.inp;
+    if (this.flickT === 0 && Math.abs(this.flickX) > 0.7) {
+      this.knockdown = false;
+      this.startDodge('roll', Math.sign(this.flickX));
+      return true;
+    }
+    if (inp.pressed.attack || inp.pressed.special) {
+      this.knockdown = false;
+      this.startMove(this.moveset.normals.ledgeAttack);
+      return true;
+    }
+    if (this.sy > 0.5 || inp.pressed.jump || inp.pressed.shield) {
+      this.consume('jump', 'shield');
+      this.knockdown = false;
+      this.toNeutral();
+      return true;
+    }
+    return false;
+  }
+
+  // Stale-move negation (normals only; PP already rations specials): a move repeated in your
+  // last 9 hits does less damage and knockback; a fresh one gets a small bonus.
+  staleMult(move) {
+    if (!move || 'pp' in move || !move.id) return 1;
+    const q = this.staleQ || [];
+    let m = 1;
+    let found = false;
+    q.forEach((id, i) => { if (id === move.id) { m -= COMBAT.staleFactors[i]; found = true; } });
+    return found ? m : COMBAT.freshBonus;
+  }
+
+  pushStale(move) {
+    if (!move || 'pp' in move || !move.id || this.staledSerial === this.moveSerial) return;
+    this.staledSerial = this.moveSerial; // once per use, however many hitboxes connect
+    this.staleQ = [move.id, ...(this.staleQ || [])].slice(0, 9);
+  }
+
   takeHit(hit) {
     if (this.dead || this.eliminated) return { result: 'miss', launch: 0 };
     if (!hit.throw && this.intangible) return { result: 'miss', launch: 0 };
     const g = this.game;
     if (!hit.throw && this.state === 'shield') {
       this.shieldHP -= hit.damage * SHIELD.damageMult;
-      this.shieldStun = Math.floor(hit.damage * 0.8) + 2;
+      this.shieldStun = Math.floor(hit.damage * 0.8 * (SHIELD.stunMult[hit.kind] ?? 1)) + 2;
       this.vel.x = hit.dirSign * (1 + hit.damage * 0.25);
       if (this.shieldHP <= 0) this.breakShield();
       return { result: 'blocked', launch: 0 };
@@ -1187,7 +1264,9 @@ export class Fighter {
       this.lastHitMove = hit.source;
     }
 
-    const launch = (hit.kb + this.percent * hit.grow * (0.5 + hit.damage / 20)) / this.st.weight;
+    // Smash-style: weight only resists the part of knockback that grows with damage, so light
+    // Pokémon aren't flung further by weak hits at low percent.
+    const launch = hit.kb * COMBAT.baseKbMult + (this.percent * hit.grow * (0.5 + hit.damage / 20)) / this.st.weight;
     const a = (hit.ang * Math.PI) / 180;
     let dx = Math.cos(a) * hit.dirSign;
     let dy = Math.sin(a);
@@ -1212,6 +1291,7 @@ export class Fighter {
     this.flash = 1;
     this.fastFall = false;
     this.setState('hitstun');
+    this.diPending = true; // directional influence is read on the first frame after hitlag
     if (dy > 0 || launch > 4) {
       this.grounded = false;
       this.platform = null;

@@ -186,6 +186,24 @@ from a world size clamped to 1.8-4.5 px) or next to a clearly nearer surface (in
 blended onto the frame and scissored to the characters' screen area. The composer (4x MSAA
 target) now always runs: RenderPass -> bloom (high quality only) -> ink -> OutputPass.
 
+## Combat mechanics pass (from SMASH_RESEARCH.md)
+
+- **Knockback:** `launch = kb + % x grow x (0.5 + dmg/20) / weight`: weight resists only the part
+  that grows with damage (Smash), so light Pokémon aren't flung by weak hits at low percent.
+- **DI + ASDI:** the stick held as hitlag ends bends the launch by up to `COMBAT.diMaxDeg` = 12°
+  (most when held perpendicular), and nudges position by `asdi` = 0.15. The old sideways drift is
+  gone. The CPU holds survival DI (perpendicular, up-and-in) with its precision.
+- **Shields:** shieldstun = floor(0.8 x dmg x mult + 2) with mult ground 1 / smash 0.725 / aerial
+  0.33 / projectile 0.29; blocked hits get full hitlag; dropping shield costs
+  `SHIELD.dropFrames` = 8 (jump or re-shield allowed); up-special and up-smash come out of shield.
+- **Tech:** 14-frame window; a shield press within 30 frames of the previous one doesn't count, so
+  mashing no longer techs. Missed tech (knockdown): after 10 frames roll left/right, getup-attack,
+  or stand up.
+- **Stale moves (normals only):** a 9-hit queue with Ultimate's factors reduces damage (and half as
+  much base knockback) of repeated moves; an unused move gets x1.05.
+- KO% table and scripts: `ko.mjs` style sims (attacker Lucario, centre stage): forward smash KOs
+  Pikachu ~80%, Blastoise ~115% (145% with good DI).
+
 ## Real Pokémon models
 
 - `public/models/<species>.glb`: the six roster models from Pokemon-3D-api/assets (Draco-decoded,

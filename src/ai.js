@@ -36,7 +36,16 @@ export class CpuBrain {
     if (!me.active || me.onRevival) {
       if (me.onRevival && me.revivalTimer > 1 + Math.random()) mx = toCenter;
     } else if (me.state === 'hitstun') {
-      mx = toCenter; // DI toward the stage
+      // Survival DI: hold perpendicular to the launch, on the side that bends it up and inwards.
+      const vx = me.vel.x;
+      const vy = me.vel.y;
+      const sp = Math.hypot(vx, vy) || 1;
+      let px = -vy / sp;
+      let py = vx / sp;
+      if (px * toCenter + py < 0) { px = -px; py = -py; }
+      const good = Math.random() < c.precision;
+      mx = good ? px : toCenter;
+      my = good ? py : 0;
       if (me.vel.y < -8 && me.pos.y < 1.5 && Math.random() < c.precision * 0.3) tap('shield'); // tech attempt
     } else if (me.state === 'held') {
       if (Math.random() < 0.5) tap(['attack', 'jump', 'special'][Math.floor(Math.random() * 3)]);

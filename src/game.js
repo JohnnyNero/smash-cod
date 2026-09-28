@@ -1022,7 +1022,9 @@ export class Game {
   // Resolve one hit: type effectiveness (immunities pass through), status moves, damage and
   // knockback, drain/recoil, and the Showdown-style callouts.
   applyHit(a, d, hb, move, base, dirSign, hx, hy) {
-    const dmg = damageFor(a, d, base, move);
+    const kind = hb.speed !== undefined ? 'projectile' : move.aerial ? 'aerial' : move.smash ? 'smash' : 'ground';
+    const stale = a.staleMult ? a.staleMult(move) : 1;
+    const dmg = damageFor(a, d, base * stale, move);
     const grassImmune = d.sp.types.includes('Grass') && (move.powder || hb.effect === 'seed');
     if (dmg.eff === 0 || grassImmune) {
       if (!this.demo) this.effects.callout(hx, hy + 0.6, 'NO EFFECT', 0xb8c0d0);
@@ -1046,9 +1048,10 @@ export class Game {
     }
 
     const res = d.takeHit({
-      damage: dmg.damage, kb: hb.kb, grow: hb.grow, ang: hb.ang, dirSign,
-      attacker: a, source: move.name || move.id,
+      damage: dmg.damage, kb: hb.kb * (0.5 + 0.5 * stale), grow: hb.grow, ang: hb.ang, dirSign,
+      attacker: a, source: move.name || move.id, kind,
     });
+    if ((res.result === 'hit' || res.result === 'blocked') && a.pushStale) a.pushStale(move);
     const color = move.type ? hexColor(TYPE_COLORS[move.type] || '#ffffff') : 0xffffff;
     if (res.result === 'hit') {
       a.stats.hits++;
@@ -1086,7 +1089,8 @@ export class Game {
     } else if (res.result === 'blocked') {
       this.effects.sparks(hx, hy, -dirSign, 0.5, d.colors.accent, 6, 8);
       this.audio.block(hx);
-      this.hitstop = Math.max(this.hitstop, 3);
+      // Shield hits freeze like real hits (Ultimate), so blocks read and punishes line up.
+      this.hitstop = Math.max(this.hitstop, Math.min(COMBAT.hitstopMax, Math.round(COMBAT.hitstopBase + dmg.damage * COMBAT.hitstopPerDamage)));
     }
     return res;
   }
