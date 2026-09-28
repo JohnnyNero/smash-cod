@@ -42,7 +42,6 @@ const JOINTS = ['hips', 'torso', 'head', 'armL', 'armR', 'legL', 'legR', 'tail',
 
 // Character look: 'toon' = cel-shaded with ink outlines (default), 'lowpoly' = faceted.
 export const STYLE = new URLSearchParams(typeof location !== 'undefined' ? location.search : '').get('style') === 'lowpoly' ? 'lowpoly' : 'toon';
-const OUTLINE = 0.022; // outline thickness in world units
 
 let toonRamp = null;
 function toonGradient() {
@@ -53,7 +52,64 @@ function toonGradient() {
   toonRamp.needsUpdate = true;
   return toonRamp;
 }
-const outlineMat = new THREE.MeshBasicMaterial({ color: 0x14121c, side: THREE.BackSide });
+// Ink outlines: back faces pushed out along smoothed normals by a width measured in screen
+// pixels (a world width, clamped to a pixel range), so lines stay smooth and even on stretched
+// parts and don't crack open at the hard edges of boxes and cones.
+const outlineMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  uniforms: {
+    color: { value: new THREE.Color(0x14121c) },
+    resolution: { value: new THREE.Vector2(1280, 720) },
+    worldWidth: { value: 0.032 },
+    minPx: { value: 1.8 },
+    maxPx: { value: 4.0 },
+  },
+  vertexShader: `
+    attribute vec3 smoothNormal;
+    uniform vec2 resolution;
+    uniform float worldWidth, minPx, maxPx;
+    void main() {
+      vec4 clip = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      vec3 n = normalize(normalMatrix * smoothNormal);
+      float px = clamp(worldWidth * projectionMatrix[1][1] * 0.5 * resolution.y / clip.w, minPx, maxPx);
+      clip.xy += n.xy * px * 2.0 / resolution * clip.w;
+      gl_Position = clip;
+    }`,
+  fragmentShader: `
+    uniform vec3 color;
+    void main() { gl_FragColor = vec4(color, 1.0); }`,
+});
+
+// Keep outline width in real pixels: call with the drawing-buffer size on resize.
+export function setOutlineResolution(w, h, pixelRatio = 1) {
+  outlineMat.uniforms.resolution.value.set(w, h);
+  outlineMat.uniforms.minPx.value = 1.8 * pixelRatio;
+  outlineMat.uniforms.maxPx.value = 4.0 * pixelRatio;
+}
+
+// Average the normals of vertices that share a position (UV seams, box corners, cone tips),
+// so the outline shell stays closed.
+function smoothNormals(geo) {
+  if (geo.attributes.smoothNormal) return;
+  const pos = geo.attributes.position;
+  const nor = geo.attributes.normal;
+  const acc = new Map();
+  const keys = [];
+  for (let i = 0; i < pos.count; i++) {
+    const k = `${pos.getX(i).toFixed(4)},${pos.getY(i).toFixed(4)},${pos.getZ(i).toFixed(4)}`;
+    keys.push(k);
+    const a = acc.get(k) || [0, 0, 0];
+    a[0] += nor.getX(i); a[1] += nor.getY(i); a[2] += nor.getZ(i);
+    acc.set(k, a);
+  }
+  const out = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const [x, y, z] = acc.get(keys[i]);
+    const l = Math.hypot(x, y, z) || 1;
+    out[i * 3] = x / l; out[i * 3 + 1] = y / l; out[i * 3 + 2] = z / l;
+  }
+  geo.setAttribute('smoothNormal', new THREE.BufferAttribute(out, 3));
+}
 
 // Cel rim light: a crisp warm band along the silhouette (the sunset behind the stadium),
 // which separates the characters from the background.
@@ -191,7 +247,7 @@ export class CreatureModel {
     return m;
   }
 
-  // Ink outlines: a slightly larger back-face copy of each body part (the "inverted hull" trick).
+  // Ink outlines: a back-face shell around each body part (the "inverted hull" trick).
   addOutlines() {
     const targets = [];
     this.body.traverse((o) => {
@@ -201,8 +257,8 @@ export class CreatureModel {
       if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
       const r = m.geometry.boundingSphere.radius * ((m.scale.x + m.scale.y + m.scale.z) / 3);
       if (r < 0.035) continue; // tiny details stay clean
+      smoothNormals(m.geometry);
       const hull = new THREE.Mesh(m.geometry, outlineMat);
-      hull.scale.setScalar(1 + OUTLINE / r);
       hull.castShadow = false;
       hull.userData.outline = true;
       m.add(hull);

@@ -12,7 +12,7 @@ import { loadTeam, saveTeam, randomTeam, cycleSpecies, cycleMove, matchupScore, 
 import { PUMMEL } from './data/moves.js';
 import { damageFor, moveEffect } from './damage.js';
 import { Fighter } from './fighter.js';
-import { CreatureModel, glowMat } from './models/creature.js';
+import { CreatureModel, glowMat, setOutlineResolution } from './models/creature.js';
 import { buildStage } from './stage.js';
 import { Effects } from './effects.js';
 import { CpuBrain } from './ai.js';
@@ -61,7 +61,7 @@ export class Game {
     this.quality = params.get('quality') || (this.mobile ? 'low' : 'high');
     const low = this.quality === 'low';
 
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: !low, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.basePixelRatio = Math.min(window.devicePixelRatio || 1, low ? 1.25 : 1.75);
     this.fixedQuality = params.has('quality');
     this.dyn = { scale: 1, max: 1, avg: 1 / 60, t: 0 };
@@ -76,7 +76,9 @@ export class Game {
     this.effects = new Effects(this.scene);
 
     if (!low) {
-      this.composer = new EffectComposer(this.renderer);
+      // Multisampled target: without it the post-processing path loses antialiasing and the
+      // ink outlines stair-step.
+      this.composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
       this.composer.addPass(new RenderPass(this.scene, this.camera));
       this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.5, 0.82);
       this.composer.addPass(this.bloom);
@@ -118,8 +120,10 @@ export class Game {
   resize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
-    this.renderer.setPixelRatio(Math.max(0.6, this.basePixelRatio * this.dyn.scale));
+    const pr = Math.max(0.6, this.basePixelRatio * this.dyn.scale);
+    this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h);
+    setOutlineResolution(w * pr, h * pr, pr);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     if (this.composer) {
