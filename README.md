@@ -52,7 +52,8 @@ working branch also deploys to GitHub Pages.
   becomes **Struggle**: weak, typeless, and a little self-damage. Up-special still gets you back to
   the stage.
 
-Add `?quality=low` to the URL on a slow machine. Phones use it automatically.
+Add `?quality=low` to the URL on a slow machine (phones use it automatically). The characters are
+cel-shaded with outlines; add `?style=lowpoly` for the original faceted look.
 
 ## Code map
 

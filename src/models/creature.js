@@ -19,6 +19,31 @@ const ramp = (p, a, b) => clamp01((p - a) / (b - a));
 
 const JOINTS = ['hips', 'torso', 'head', 'armL', 'armR', 'legL', 'legR', 'tail', 'earL', 'earR'];
 
+// Character look: 'toon' = cel-shaded with ink outlines (default), 'lowpoly' = faceted.
+export const STYLE = new URLSearchParams(typeof location !== 'undefined' ? location.search : '').get('style') === 'lowpoly' ? 'lowpoly' : 'toon';
+const OUTLINE = 0.022; // outline thickness in world units
+
+let toonRamp = null;
+function toonGradient() {
+  if (toonRamp) return toonRamp;
+  const data = new Uint8Array([90, 170, 255]); // three bands: shadow, mid, lit
+  toonRamp = new THREE.DataTexture(data, 3, 1, THREE.RedFormat);
+  toonRamp.minFilter = toonRamp.magFilter = THREE.NearestFilter;
+  toonRamp.needsUpdate = true;
+  return toonRamp;
+}
+const outlineMat = new THREE.MeshBasicMaterial({ color: 0x14121c, side: THREE.BackSide });
+
+// A small spring for secondary motion (tails, ears, wings lagging behind the body).
+class Spring {
+  constructor(k = 140, c = 11) { this.k = k; this.c = c; this.x = 0; this.v = 0; }
+  step(dt, target = 0) {
+    this.v += (-(this.x - target) * this.k - this.v * this.c) * dt;
+    this.x = Math.max(-1.2, Math.min(1.2, this.x + this.v * dt));
+    return this.x;
+  }
+}
+
 function tagTexture(text, css) {
   const c = document.createElement('canvas');
   c.width = 128;
@@ -71,6 +96,14 @@ export class CreatureModel {
 
     this.j = {};
     this.parts = BUILDERS[species.model](this, colors);
+    this.eyes = [];
+    this.body.traverse((o) => { if (o.userData.eye) this.eyes.push(o); });
+    if (STYLE === 'toon') this.addOutlines();
+    this.springs = { tail: new Spring(120, 9), tailZ: new Spring(90, 8), ear: new Spring(160, 10), bob: new Spring(200, 16) };
+    this.prevV = { x: 0, y: 0 };
+    this.blinkT = 2 + Math.random() * 3;
+    this.appearT = 1;
+    this.recallT = 1;
     this.rest = {};
     for (const name of JOINTS) {
       const o = this.j[name];
@@ -106,15 +139,40 @@ export class CreatureModel {
 
   // Species builders register materials through this so hit flashes reach every part.
   mat(color, o = {}) {
-    const m = new THREE.MeshStandardMaterial({
-      color, roughness: o.r ?? 0.7, metalness: o.m ?? 0.05, flatShading: true,
-      emissive: o.e ?? 0x000000, emissiveIntensity: o.ei ?? 1,
-    });
+    const m = STYLE === 'toon'
+      ? new THREE.MeshToonMaterial({ color, gradientMap: toonGradient(), emissive: o.e ?? 0x000000, emissiveIntensity: o.ei ?? 1 })
+      : new THREE.MeshStandardMaterial({
+        color, roughness: o.r ?? 0.7, metalness: o.m ?? 0.05, flatShading: true,
+        emissive: o.e ?? 0x000000, emissiveIntensity: o.ei ?? 1,
+      });
     m.userData.baseEmissive = m.emissive.clone();
     m.userData.baseIntensity = m.emissiveIntensity;
     this.mats.push(m);
     return m;
   }
+
+  // Ink outlines: a slightly larger back-face copy of each body part (the "inverted hull" trick).
+  addOutlines() {
+    const targets = [];
+    this.body.traverse((o) => {
+      if (o.isMesh && this.mats.includes(o.material) && !o.userData.eye) targets.push(o);
+    });
+    for (const m of targets) {
+      if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+      const r = m.geometry.boundingSphere.radius * ((m.scale.x + m.scale.y + m.scale.z) / 3);
+      if (r < 0.035) continue; // tiny details stay clean
+      const hull = new THREE.Mesh(m.geometry, outlineMat);
+      hull.scale.setScalar(1 + OUTLINE / r);
+      hull.castShadow = false;
+      hull.userData.outline = true;
+      m.add(hull);
+    }
+  }
+
+  // Poké Ball entrance: grow in from a white flash. Recall: shrink away in a red flash.
+  appear() { this.appearT = 0; }
+  recall() { this.recallT = 0; }
+  get recalling() { return this.recallT < 1; }
 
   setFlash(amount, color) {
     const a = Math.round(amount * 20) / 20;
@@ -144,28 +202,67 @@ export class CreatureModel {
     const p = v.p;
     const run = Math.min(1, Math.abs(v.vx) / (v.runSpeed || 8));
 
+    // ---- secondary motion: springs driven by the body's acceleration
+    const sd = Math.min(dt, 1 / 30);
+    if (sd > 0) {
+      const ax = (v.vx - this.prevV.x) / sd;
+      const ay = (v.vy - this.prevV.y) / sd;
+      this.prevV.x = v.vx;
+      this.prevV.y = v.vy;
+      const fwd = ax * v.facing;
+      this.springs.tail.v += (-ay * 0.004 - fwd * 0.004) * (Math.abs(ay) < 400 ? 1 : 0.3);
+      this.springs.tailZ.v += fwd * 0.003;
+      this.springs.ear.v += -ay * 0.005;
+      this.springs.bob.v += -ay * 0.0015;
+    }
+    const tailS = this.springs.tail.step(sd, 0);
+    const tailZ = this.springs.tailZ.step(sd, 0);
+    const earS = this.springs.ear.step(sd, 0);
+    const bobS = this.springs.bob.step(sd, 0);
+
     // ---- base pose from state
-    o.tail.z = Math.sin(t * 2.2) * 0.12;
+    o.tail.z = Math.sin(t * 2.2) * 0.12 + tailZ;
+    o.tail.x = tailS;
     o.earL.z = Math.sin(t * 1.7) * 0.05;
     o.earR.z = -Math.sin(t * 1.9) * 0.05;
+    o.earL.x = o.earR.x = earS * 0.8;
     if (v.state === 'ground' || v.state === 'landlag' || v.state === 'jumpsquat') {
-      if (run > 0.05) this.phase += dt * (6 + 10 * run);
+      if (run > 0.05) this.phase += dt * (6 + 11 * run);
       const s = Math.sin(this.phase);
-      o.legL.x = s * 0.9 * run;
-      o.legR.x = -s * 0.9 * run;
-      o.armL.x = -s * 0.8 * run;
-      o.armR.x = s * 0.8 * run;
-      o.torso.x = 0.35 * run + Math.sin(t * 2.5) * 0.03;
-      o.earL.x = o.earR.x = -0.5 * run;
-      bodyY = Math.abs(Math.cos(this.phase)) * 0.06 * run;
-      if (v.state !== 'ground') bodyY -= 0.08;
+      o.legL.x = s * 1.0 * run;
+      o.legR.x = -s * 1.0 * run;
+      o.armL.x = -s * 0.9 * run;
+      o.armR.x = s * 0.9 * run;
+      o.torso.x = 0.38 * run + Math.sin(t * 2.5) * 0.03;
+      o.torso.y = s * 0.18 * run; // hips and shoulders twist against each other
+      o.head.y = -s * 0.12 * run;
+      o.head.x = -0.15 * run; // keep eyes forward while leaning
+      o.earL.x += -0.5 * run;
+      o.earR.x += -0.5 * run;
+      bodyY = Math.abs(Math.cos(this.phase)) * 0.08 * run;
+      if (run < 0.05 && v.state === 'ground') {
+        // Idle: breathe, and now and then glance around.
+        bodyY = Math.sin(t * 2.4) * 0.012;
+        o.head.y = Math.sin(t * 0.45) * Math.max(0, Math.sin(t * 0.21)) * 0.45;
+        o.head.x = Math.sin(t * 0.7) * 0.05;
+        o.armL.z = 0.08 + Math.sin(t * 2.4) * 0.04;
+        o.armR.z = -0.08 - Math.sin(t * 2.4) * 0.04;
+      }
+      if (v.state !== 'ground') { bodyY -= 0.1; curl = 0.95; } // crouch before a jump / on landing
     } else if (v.state === 'air' || v.state === 'helpless') {
       if (v.vy > 0) {
-        o.legL.x = -0.7; o.legR.x = -0.4;
+        o.legL.x = -0.8; o.legR.x = -0.4;
         o.armL.x = o.armR.x = -2.2;
       } else {
-        o.legL.x = -0.2; o.legR.x = 0.2;
-        o.armL.z = 0.7; o.armR.z = -0.7;
+        o.legL.x = -0.2; o.legR.x = 0.25;
+        o.armL.z = 0.7 + Math.sin(t * 10) * 0.1; o.armR.z = -0.7 - Math.sin(t * 10) * 0.1;
+      }
+      if (v.flip >= 0) {
+        // Double jump: a quick front flip, tucked.
+        const k = 1 - (1 - v.flip) ** 3;
+        rotX = Math.PI * 2 * k;
+        curl = 1 - 0.18 * Math.sin(v.flip * Math.PI);
+        o.legL.x = o.legR.x = -1.2 * Math.sin(v.flip * Math.PI);
       }
       if (v.state === 'helpless') {
         o.armL.x = o.armR.x = -2.8;
@@ -184,7 +281,10 @@ export class CreatureModel {
       else if (v.dodge === 'air') { rotY = v.sf * 0.5; o.armL.x = o.armR.x = -1.5; }
       else { o.torso.x = -0.3; bodyY = -0.05; }
     } else if (v.state === 'hitstun') {
-      o.torso.x = -0.5;
+      // Whip away from the hit: backwards if launched away from where we face.
+      const back = v.vx * v.facing < 0 ? 1 : -0.6;
+      o.torso.x = -0.5 * back - v.flash * 0.3 * back;
+      o.head.x = -0.5 * back * v.flash;
       o.armL.x = -2.5 + Math.sin(t * 20) * 0.5;
       o.armR.x = -2.5 + Math.cos(t * 20) * 0.5;
       o.legL.x = Math.sin(t * 18) * 0.6;
@@ -415,6 +515,17 @@ export class CreatureModel {
       }
     }
 
+    // ---- victory pose on the results screen
+    if (v.victory) {
+      bodyY = Math.abs(Math.sin(t * 5)) * 0.35;
+      o.armL.x = -2.9 + Math.sin(t * 10) * 0.3;
+      o.armR.x = -2.9 - Math.sin(t * 10) * 0.3;
+      o.head.x = -0.3;
+      o.tail.x = Math.sin(t * 8) * 0.5;
+      rotY = Math.sin(t * 2) * 0.4;
+      curl = 1 + Math.abs(Math.sin(t * 5)) * 0.05;
+    }
+
     // ---- tumble and zip spin around the body centre
     if (v.tumble && (v.state === 'hitstun' || v.state === 'air')) {
       spin = this.spinner.rotation.z - Math.sign(v.vx || 1) * dt * Math.min(18, 6 + Math.hypot(v.vx, v.vy) * 0.5);
@@ -438,9 +549,9 @@ export class CreatureModel {
     pv.bodyY = damp(pv.bodyY, bodyY, 20, dt);
     pv.curl = damp(pv.curl, curl, 25, dt);
     // Flips and spins are driven directly so they complete cleanly.
-    pv.rotX = v.state === 'attack' || rotX === 0 ? rotX : damp(pv.rotX, rotX, 20, dt);
+    pv.rotX = v.state === 'attack' || v.flip >= 0 || rotX === 0 ? rotX : damp(pv.rotX, rotX, 20, dt);
     pv.rotY = rotY;
-    this.body.position.y = -this.h * 0.5 + pv.bodyY;
+    this.body.position.y = -this.h * 0.5 + pv.bodyY + bobS * 0.12;
     this.pivot.rotation.set(pv.rotX, pv.rotY, 0);
     const sq = v.landSquash;
     this.pivot.scale.set(pv.curl * (1 + sq * 0.15), pv.curl * (1 - sq * 0.22), pv.curl * (1 + sq * 0.15));
@@ -459,7 +570,26 @@ export class CreatureModel {
       this.shieldMat.opacity = 0.22 + (1 - v.shieldFrac) * 0.25 + Math.sin(t * 12) * 0.03;
     }
 
-    if (this.parts.update) this.parts.update(v, t, dt);
+    if (this.parts.update) this.parts.update(v, t, dt, this.springs);
+
+    // Blink every few seconds.
+    this.blinkT -= dt;
+    const blink = this.blinkT < 0.12 && v.state !== 'sleep';
+    if (this.blinkT < 0) this.blinkT = 2 + Math.random() * 3.5;
+    for (const e of this.eyes) e.scale.y = (e.userData.sy ??= e.scale.y) * (blink || v.state === 'sleep' ? 0.12 : 1);
+
+    // Poké Ball entrance (grow out of a white flash) and recall (shrink into red light).
+    let grow = 1;
+    if (this.appearT < 1) {
+      this.appearT = Math.min(1, this.appearT + dt / 0.45);
+      const k = this.appearT;
+      grow = k < 0.7 ? (k / 0.7) * 1.12 : 1.12 - 0.12 * ((k - 0.7) / 0.3); // overshoot and settle
+    }
+    if (this.recallT < 1) {
+      this.recallT = Math.min(1, this.recallT + dt / 0.3);
+      grow = 1 - this.recallT;
+    }
+    this.root.scale.setScalar(Math.max(0.01, grow));
 
     let flash = v.flash;
     let flashColor = null;
@@ -470,6 +600,8 @@ export class CreatureModel {
     else if (v.bond) { flash = 0.25 + 0.15 * Math.sin(t * 8); flashColor = 0x8a3aff; }
     else if (v.seeded && Math.sin(t * 6) > 0.3) { flash = 0.25; flashColor = 0x6adc3a; }
     else if (v.boosted) { flash = 0.12 + 0.08 * Math.sin(t * 5); flashColor = 0xff5a3a; }
+    if (this.appearT < 1) { flash = 1 - this.appearT; flashColor = null; }
+    if (this.recallT < 1) { flash = 0.4 + this.recallT * 0.6; flashColor = 0xff3030; }
     this.setFlash(Math.min(1, flash), flashColor);
     this.tag.visible = v.showTag;
   }
@@ -477,6 +609,7 @@ export class CreatureModel {
   dispose() {
     this.root.traverse((obj) => {
       if (obj.geometry) obj.geometry.dispose();
+      if (obj.material === outlineMat) return; // shared by every model
       if (obj.material && obj.material.map) obj.material.map.dispose();
       if (obj.material) obj.material.dispose();
     });

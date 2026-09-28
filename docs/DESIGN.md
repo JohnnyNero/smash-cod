@@ -140,6 +140,24 @@ This is the source of truth for decisions. Update it when a decision changes.
 - Polish: crowd roar on KOs, normals have display names in the killfeed ("Forward Smash"),
   dead gun-era effects removed.
 
+## Polish pass: models & animation
+
+- **Look:** characters are cel-shaded (3-band toon ramp) with ink outlines (inverted-hull copies of
+  each part) so they pop against the stadium; the stage stays low-poly. `?style=lowpoly` restores
+  the faceted look for comparison.
+- **Models:** smoother parts; Pikachu's thighs blend into its body and its tail is bigger; Charizard
+  has chunkier legs, a mouth, bigger wings with claws; Lucario's mask is two lobes around the eyes,
+  with bigger ears and chest spike. All eyes blink.
+- **Secondary motion:** springs driven by the body's acceleration make tails, ears, Charizard's
+  wings and Lucario's aura appendages lag, swing and bounce.
+- **Movement:** livelier run (twist, lean, bob), idle breathing and glancing around, crouch on
+  jump/landing, front flip on double jumps, directional hit reactions.
+- **Attacks:** smear arcs trace every melee hitbox as it comes out (type-coloured for specials).
+- **Poké Balls:** a ball arcs in from the trainer's side and the Pokémon grows out of a white flash
+  (match start, switch-in, after a KO); switching out fires a red recall beam and shrinks the
+  Pokémon away.
+- **Victory pose:** the winner cheers on the results screen, framed by the camera.
+
 ### Ideas after v1
 
 Tera (once per match), switch-in resist rewards, abilities, items (Choice Band, Leftovers, Life Orb,

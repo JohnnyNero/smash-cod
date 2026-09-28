@@ -105,6 +105,7 @@ export class Fighter {
       return;
     }
     this.t += dt;
+    if (this.flipF > 0) this.flipF--;
     this.flash = Math.max(0, this.flash - dt * 5);
     this.landSquash = Math.max(0, this.landSquash - dt * 5);
     if (this.invuln > 0) this.invuln--;
@@ -289,6 +290,7 @@ export class Fighter {
     if (inp.pressed.swap && this.tryStartSwitch()) return;
     if (inp.pressed.jump && this.airJumps > 0) {
       this.airJumps--;
+      this.flipF = 20; // double-jump flip (visual)
       this.vel.y = this.st.doubleJump;
       this.vel.x = this.sx * this.st.airSpeed;
       this.fastFall = false;

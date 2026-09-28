@@ -443,6 +443,7 @@ export class Game {
     });
     this.fighters = this.players.map((p) => p.team[p.active]);
     this.ui.hidePicks();
+    if (!this.demo) for (const f of this.fighters) this.sendOut(f);
     this.timeLeft = st.minutes * 60;
     this.suddenDeath = false;
     this.timeScale = 1;
@@ -515,9 +516,13 @@ export class Game {
       out.toNeutral();
       return false;
     }
+    const oc = out.center;
+    const tx = this.trainerX(slot);
+    this.effects.recallBeam(tx, 7, oc.x, oc.y);
+    out.model.recall(); // shrinks away in red light while the new Pokémon comes out
     out.onSwitchOut();
-    out.model.root.visible = false;
     inn.onSwitchIn(out);
+    this.sendOut(inn);
     p.active = idx;
     this.fighters[slot] = inn;
     p.switchCd = free ? 90 : SWITCH_COOLDOWN;
@@ -528,6 +533,18 @@ export class Game {
     this.audio.switchIn(c.x);
     this.effects.callout(c.x, inn.pos.y + inn.h + 0.7, `GO! ${inn.sp.name.toUpperCase()}!`, hexColor(inn.colors.css));
     return true;
+  }
+
+  // Where each player's "trainer" throws from: just off their side of the screen.
+  trainerX(slot) {
+    return (slot === 0 ? -1 : 1) * 15;
+  }
+
+  // Poké Ball throw: the ball arcs in from the trainer's side and the Pokémon grows out of it.
+  sendOut(f) {
+    const c = f.center;
+    this.effects.pokeball(this.trainerX(f.slot), 8, c.x, c.y, f.colors.main);
+    f.model.appear();
   }
 
   // Volt Switch: after it hits, switch to the next healthy teammate for free.
@@ -595,6 +612,7 @@ export class Game {
         f.benched = false;
         f.respawn();
         this.fighters[i] = f;
+        this.sendOut(f);
       } else if (pick !== p.active) {
         this.state = 'playing'; // performSwitch only works mid-battle
         this.performSwitch(i, pick, true);
@@ -857,6 +875,7 @@ export class Game {
       }
     });
     this.resolveHits();
+    this.spawnSwooshes();
     this.updateProjectiles(SIM_DT);
     if (this.teamMode) this.benchHeal();
     if (this.state === 'playing' && this.mode === 'TIME' && !this.suddenDeath && !this.demo) {
@@ -925,6 +944,19 @@ export class Game {
           this.applyHit(a, d, hb, a.move, base, dirSign, hx, hy);
           if (!a.move) break; // the hit ended the attacker's move (e.g. recoil KO)
         }
+      }
+    }
+  }
+
+  // Smear arcs that trace each melee hitbox as it comes out (white for normals, type colour for specials).
+  spawnSwooshes() {
+    for (const a of this.fighters) {
+      if (!a.active || a.state !== 'attack' || !a.move || !a.move.hitboxes || a.curF < 0) continue;
+      for (const hb of a.move.hitboxes) {
+        if (hb.f[0] !== a.curF || hb.grab || !hb.dmg) continue;
+        const color = a.move.special && a.move.type ? hexColor(TYPE_COLORS[a.move.type] || '#ffffff') : 0xffffff;
+        const c = a.center;
+        this.effects.swoosh(c.x, c.y, a.pos.x + hb.x * a.facing, a.pos.y + hb.y, hb.r, color);
       }
     }
   }
@@ -1267,12 +1299,21 @@ export class Game {
       shieldFrac: Math.max(0, f.shieldHP / SHIELD.hp), flash: f.flash, invuln: f.invuln > 0 || f.onRevival,
       landSquash: f.landSquash, zipDir: f.zip ? { x: f.zip.vx, y: f.zip.vy } : null,
       boosted: Object.values(f.boosts).some((v) => v > 0), seeded: !!f.seed, bond: f.destinyBond > 0,
+      flip: f.flipF > 0 && f.state === 'air' ? 1 - f.flipF / 20 : -1,
+      victory: (this.state === 'results' || (this.state === 'gameover' && this.gameoverTimer < 1.2)) && this.winner === f.slot,
       showTag: !this.demo,
     };
   }
 
   updateVisuals(dt) {
-    for (const p of this.players) for (const f of p.team) if (f !== this.fighters[p.slot]) f.model.root.visible = false;
+    for (const p of this.players) {
+      for (const f of p.team) {
+        if (f === this.fighters[p.slot]) continue;
+        // A recalled Pokémon stays visible just long enough to shrink away.
+        f.model.root.visible = f.model.recalling;
+        if (f.model.recalling) f.model.update(this.fighterView(f), dt);
+      }
+    }
     this.fighters.forEach((f, i) => {
       const m = f.model;
       m.root.visible = f.active;
@@ -1332,7 +1373,13 @@ export class Game {
       const h = maxY - minY + 4.5;
       const halfH = Math.max(h / 2, w / 2 / this.camera.aspect, 3.6);
       td = clamp(halfH / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)), 11, 46);
-      if (this.state === 'title') {
+      const champ = this.state === 'results' && this.winner !== null && this.winner !== undefined ? this.fighters[this.winner] : null;
+      if (champ && champ.active) {
+        // Results: frame the winner's victory pose beside the results panel.
+        tx = champ.pos.x + (this.camera.aspect > 1.2 ? 3 : 0);
+        ty = champ.pos.y + champ.h * 0.6;
+        td = 8.5;
+      } else if (this.state === 'title') {
         tx = Math.sin(this.realTime * 0.15) * 3;
         ty = 3;
         td = Math.max(td, 28);

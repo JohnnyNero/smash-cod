@@ -13,7 +13,7 @@ function mesh(geo, mat, x = 0, y = 0, z = 0) {
   m.receiveShadow = true;
   return m;
 }
-const ball = (r, mat, sx = 1, sy = 1, sz = 1, seg = 10) => {
+const ball = (r, mat, sx = 1, sy = 1, sz = 1, seg = 14) => {
   const m = mesh(new THREE.SphereGeometry(r, seg, Math.max(6, seg - 3)), mat);
   m.scale.set(sx, sy, sz);
   return m;
@@ -23,8 +23,8 @@ const group = (x = 0, y = 0, z = 0) => {
   g.position.set(x, y, z);
   return g;
 };
-const cyl = (rt, rb, h, mat, seg = 8) => mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
-const cone = (r, h, mat, seg = 8) => mesh(new THREE.ConeGeometry(r, h, seg), mat);
+const cyl = (rt, rb, h, mat, seg = 12) => mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
+const cone = (r, h, mat, seg = 10) => mesh(new THREE.ConeGeometry(r, h, seg), mat);
 const at = (obj, x, y, z, rx = 0, ry = 0, rz = 0) => {
   obj.position.set(x, y, z);
   obj.rotation.set(rx, ry, rz);
@@ -34,8 +34,10 @@ const at = (obj, x, y, z, rx = 0, ry = 0, rz = 0) => {
 // Shared: a pair of eyes (dark with a glint) on a head group.
 function eyes(head, M, x, y, z, r = 0.05, color) {
   for (const side of [-1, 1]) {
-    head.add(at(ball(r, color || M.black, 1, 1.2, 0.7, 8), side * x, y, z));
-    head.add(at(ball(r * 0.35, M.white, 1, 1, 1, 6), side * x + r * 0.3, y + r * 0.4, z + r * 0.6));
+    const eye = at(ball(r, color || M.black, 1, 1.2, 0.7, 10), side * x, y, z);
+    const glint = at(ball(r * 0.35, M.white, 1, 1, 1, 6), side * x + r * 0.3, y + r * 0.4, z + r * 0.6);
+    eye.userData.eye = glint.userData.eye = true; // blink targets
+    head.add(eye, glint);
   }
 }
 
@@ -62,8 +64,8 @@ function pikachu(model, colors) {
 
   for (const side of [-1, 1]) {
     const leg = group(side * 0.13, 0, 0.02);
-    leg.add(ball(0.11, M.yellow, 1, 1.1, 1));
-    const foot = ball(0.1, M.yellow, 1, 0.6, 1.6);
+    leg.add(at(ball(0.13, M.yellow, 1, 1.25, 1.05), 0, 0.02, 0)); // thigh blends into the body
+    const foot = ball(0.11, M.yellow, 1, 0.6, 1.7);
     foot.position.set(0, -0.2, 0.06);
     leg.add(foot);
     hips.add(leg);
@@ -91,10 +93,12 @@ function pikachu(model, colors) {
   headMesh.position.y = 0.2;
   head.add(headMesh);
   for (const side of [-1, 1]) {
-    const eye = ball(0.055, M.black, 1, 1.1, 0.7, 8);
+    const eye = ball(0.055, M.black, 1, 1.1, 0.7, 10);
     eye.position.set(side * 0.13, 0.24, 0.255);
+    eye.userData.eye = true;
     head.add(eye);
     const glint = ball(0.02, M.white, 1, 1, 1, 6);
+    glint.userData.eye = true;
     glint.position.set(side * 0.13 + 0.015, 0.265, 0.29);
     head.add(glint);
     const cheek = ball(0.075, M.cheek, 1, 1, 0.5, 8);
@@ -133,6 +137,7 @@ function pikachu(model, colors) {
   t3.rotation.x = 1.3;
   t3.add(mesh(new THREE.BoxGeometry(0.05, 0.34, 0.24), M.tail, 0, 0.16, 0));
   t2.add(t3);
+  tail.scale.setScalar(1.25);
   torso.add(tail);
   j.tail = tail;
 
@@ -188,8 +193,9 @@ function charizard(model, colors) {
   j.hips = hips;
   for (const side of [-1, 1]) {
     const leg = group(side * 0.22, 0, 0);
-    leg.add(at(ball(0.2, M.orange, 1, 1.2, 1.1), 0, -0.12, 0));
-    leg.add(at(ball(0.15, M.orange, 1, 0.55, 1.6), 0, -0.5, 0.1));
+    leg.add(at(ball(0.24, M.orange, 1, 1.25, 1.15), 0, -0.04, 0)); // big thigh tucked into the body
+    leg.add(at(cyl(0.1, 0.12, 0.3, M.orange), 0, -0.36, 0.04));
+    leg.add(at(ball(0.16, M.orange, 1, 0.55, 1.6), 0, -0.52, 0.1));
     for (const c of [-1, 0, 1]) leg.add(at(cone(0.03, 0.1, M.white, 5), c * 0.06, -0.52, 0.34, Math.PI / 2));
     hips.add(leg);
     j[side < 0 ? 'legR' : 'legL'] = leg;
@@ -208,6 +214,7 @@ function charizard(model, colors) {
   head.add(at(ball(1, M.orange, 0.22, 0.2, 0.28, 10), 0, 0.1, 0.06));
   head.add(at(ball(1, M.orange, 0.15, 0.12, 0.18, 8), 0, 0.03, 0.3));
   eyes(head, M, 0.12, 0.16, 0.24, 0.045);
+  head.add(at(mesh(new THREE.BoxGeometry(0.2, 0.015, 0.14), M.black), 0, -0.02, 0.36)); // mouth line
   head.add(at(ball(0.015, M.black, 1, 1, 1, 5), 0.05, 0.08, 0.47));
   head.add(at(ball(0.015, M.black, 1, 1, 1, 5), -0.05, 0.08, 0.47));
   for (const side of [-1, 1]) {
@@ -230,9 +237,10 @@ function charizard(model, colors) {
   for (const side of [-1, 1]) {
     const w = group(side * 0.22, 0.78, -0.26);
     w.rotation.set(-0.35, 0, side * 0.35);
-    w.add(at(cyl(0.035, 0.035, 0.95, M.orange, 6), 0, 0.45, -0.2, -0.45));
-    w.add(at(mesh(new THREE.BoxGeometry(0.04, 0.8, 0.7), M.wing), side * 0.02, 0.45, -0.45, 0.35));
-    w.add(at(mesh(new THREE.BoxGeometry(0.03, 0.5, 0.45), M.wing), side * 0.02, 0.15, -0.72, 0.9));
+    w.add(at(cyl(0.04, 0.03, 1.15, M.orange, 6), 0, 0.55, -0.25, -0.45));
+    w.add(at(mesh(new THREE.BoxGeometry(0.04, 1.0, 0.85), M.wing), side * 0.02, 0.55, -0.55, 0.35));
+    w.add(at(mesh(new THREE.BoxGeometry(0.035, 0.62, 0.55), M.wing), side * 0.02, 0.18, -0.88, 0.9));
+    w.add(at(cone(0.03, 0.12, M.horn, 5), 0, 1.12, -0.52, -0.4)); // wing claw
     torso.add(w);
     wings.push({ g: w, side });
   }
@@ -248,11 +256,15 @@ function charizard(model, colors) {
   j.tail = tail;
 
   return {
-    update(v, t) {
+    update(v, t, dt, springs) {
       const flying = !v.grounded;
       const speed = flying ? 12 : 3;
       const amp = flying ? 0.5 : 0.12;
-      for (const w of wings) w.g.rotation.z = w.side * (0.35 + Math.sin(t * speed) * amp);
+      // Wings flap, and fold/lag with the body's motion (spring).
+      for (const w of wings) {
+        w.g.rotation.z = w.side * (0.35 + Math.sin(t * speed) * amp + springs.ear.x * 0.35);
+        w.g.rotation.x = -0.35 - springs.tail.x * 0.25;
+      }
       flame.scale.set(1, 0.8 + Math.random() * 0.5, 1);
       flameCore.scale.set(1, 0.8 + Math.random() * 0.4, 1);
     },
@@ -435,8 +447,10 @@ function gengar(model, colors) {
   torso.add(head);
   j.head = head;
   for (const side of [-1, 1]) {
-    head.add(at(ball(0.1, M.eye, 1.1, 0.7, 0.5, 8), side * 0.18, 0.14, 0.2, 0, 0, side * 0.35));
-    head.add(at(ball(0.03, M.white, 1, 1, 1, 6), side * 0.18, 0.13, 0.25));
+    const eye = at(ball(0.1, M.eye, 1.1, 0.7, 0.5, 10), side * 0.18, 0.14, 0.2, 0, 0, side * 0.35);
+    const pupil = at(ball(0.03, M.white, 1, 1, 1, 6), side * 0.18, 0.13, 0.25);
+    eye.userData.eye = pupil.userData.eye = true;
+    head.add(eye, pupil);
   }
   // Wide grin: a curved row of teeth sunk into the body surface.
   for (let i = -3; i <= 3; i++) {
@@ -501,19 +515,21 @@ function lucario(model, colors) {
   j.torso = torso;
   torso.add(at(cyl(0.16, 0.18, 0.3, M.black, 10), 0, 0.12, 0));
   torso.add(at(ball(1, M.cream, 0.24, 0.26, 0.2, 10), 0, 0.42, 0.03));
-  torso.add(at(cone(0.05, 0.16, M.steel, 6), 0, 0.42, 0.26, Math.PI / 2));
+  torso.add(at(cone(0.06, 0.22, M.steel, 8), 0, 0.42, 0.28, Math.PI / 2));
   bandana(torso, M, 0.62, 0.13, 0.02);
   const head = group(0, 0.68, 0.04);
   torso.add(head);
   j.head = head;
   head.add(at(ball(1, M.blue, 0.2, 0.2, 0.22, 10), 0, 0.12, 0));
   head.add(at(ball(1, M.black, 0.11, 0.08, 0.14, 8), 0, 0.06, 0.16));
-  head.add(at(mesh(new THREE.BoxGeometry(0.36, 0.07, 0.2), M.black), 0, 0.15, 0.07));
-  eyes(head, M, 0.08, 0.15, 0.19, 0.035, M.red);
+  // Black mask: two lobes wrapping the eyes and meeting at the snout.
+  for (const side of [-1, 1]) head.add(at(ball(1, M.black, 0.1, 0.055, 0.09, 12), side * 0.1, 0.15, 0.12, 0, side * 0.5, 0));
+  eyes(head, M, 0.085, 0.155, 0.19, 0.035, M.red);
   for (const side of [-1, 1]) {
     const ear = group(side * 0.11, 0.28, -0.02);
     ear.rotation.z = -side * 0.25;
-    ear.add(at(cone(0.06, 0.24, M.blue, 6), 0, 0.11, 0));
+    ear.add(at(cone(0.07, 0.3, M.blue, 8), 0, 0.14, 0));
+    ear.add(at(cone(0.035, 0.18, M.black, 6), 0, 0.12, 0.03)); // inner ear
     head.add(ear);
     j[side < 0 ? 'earR' : 'earL'] = ear;
   }
@@ -541,8 +557,11 @@ function lucario(model, colors) {
   torso.add(tail);
   j.tail = tail;
   return {
-    update(v, t) {
-      locks.forEach((l, i) => { l.rotation.x = 2.5 + Math.sin(t * 3 + i) * 0.12 - Math.min(0.6, Math.abs(v.vx) * 0.05); });
+    update(v, t, dt, springs) {
+      // The appendages stream behind when running and bounce with the body (spring).
+      locks.forEach((l, i) => {
+        l.rotation.x = 2.5 + Math.sin(t * 3 + i) * 0.12 - Math.min(0.6, Math.abs(v.vx) * 0.05) - springs.tail.x * 0.8;
+      });
     },
   };
 }
