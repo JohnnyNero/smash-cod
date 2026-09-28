@@ -8,6 +8,7 @@
 
 import * as THREE from 'three';
 import { BUILDERS } from './species.js';
+import { INK_LAYER, inkTargets } from '../ink.js';
 
 const damp = (a, b, rate, dt) => a + (b - a) * (1 - Math.exp(-rate * dt));
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -52,65 +53,6 @@ function toonGradient() {
   toonRamp.needsUpdate = true;
   return toonRamp;
 }
-// Ink outlines: back faces pushed out along smoothed normals by a width measured in screen
-// pixels (a world width, clamped to a pixel range), so lines stay smooth and even on stretched
-// parts and don't crack open at the hard edges of boxes and cones.
-const outlineMat = new THREE.ShaderMaterial({
-  side: THREE.BackSide,
-  uniforms: {
-    color: { value: new THREE.Color(0x14121c) },
-    resolution: { value: new THREE.Vector2(1280, 720) },
-    worldWidth: { value: 0.032 },
-    minPx: { value: 1.8 },
-    maxPx: { value: 4.0 },
-  },
-  vertexShader: `
-    attribute vec3 smoothNormal;
-    uniform vec2 resolution;
-    uniform float worldWidth, minPx, maxPx;
-    void main() {
-      vec4 clip = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      vec3 n = normalize(normalMatrix * smoothNormal);
-      float px = clamp(worldWidth * projectionMatrix[1][1] * 0.5 * resolution.y / clip.w, minPx, maxPx);
-      clip.xy += n.xy * px * 2.0 / resolution * clip.w;
-      gl_Position = clip;
-    }`,
-  fragmentShader: `
-    uniform vec3 color;
-    void main() { gl_FragColor = vec4(color, 1.0); }`,
-});
-
-// Keep outline width in real pixels: call with the drawing-buffer size on resize.
-export function setOutlineResolution(w, h, pixelRatio = 1) {
-  outlineMat.uniforms.resolution.value.set(w, h);
-  outlineMat.uniforms.minPx.value = 1.8 * pixelRatio;
-  outlineMat.uniforms.maxPx.value = 4.0 * pixelRatio;
-}
-
-// Average the normals of vertices that share a position (UV seams, box corners, cone tips),
-// so the outline shell stays closed.
-function smoothNormals(geo) {
-  if (geo.attributes.smoothNormal) return;
-  const pos = geo.attributes.position;
-  const nor = geo.attributes.normal;
-  const acc = new Map();
-  const keys = [];
-  for (let i = 0; i < pos.count; i++) {
-    const k = `${pos.getX(i).toFixed(4)},${pos.getY(i).toFixed(4)},${pos.getZ(i).toFixed(4)}`;
-    keys.push(k);
-    const a = acc.get(k) || [0, 0, 0];
-    a[0] += nor.getX(i); a[1] += nor.getY(i); a[2] += nor.getZ(i);
-    acc.set(k, a);
-  }
-  const out = new Float32Array(pos.count * 3);
-  for (let i = 0; i < pos.count; i++) {
-    const [x, y, z] = acc.get(keys[i]);
-    const l = Math.hypot(x, y, z) || 1;
-    out[i * 3] = x / l; out[i * 3 + 1] = y / l; out[i * 3 + 2] = z / l;
-  }
-  geo.setAttribute('smoothNormal', new THREE.BufferAttribute(out, 3));
-}
-
 // Cel rim light: a crisp warm band along the silhouette (the sunset behind the stadium),
 // which separates the characters from the background.
 function addRim(m) {
@@ -247,22 +189,12 @@ export class CreatureModel {
     return m;
   }
 
-  // Ink outlines: a back-face shell around each body part (the "inverted hull" trick).
+  // Ink outlines are drawn in screen space (src/ink.js) around everything on INK_LAYER.
   addOutlines() {
-    const targets = [];
     this.body.traverse((o) => {
-      if (o.isMesh && this.mats.includes(o.material) && !o.userData.eye) targets.push(o);
+      if (o.isMesh && this.mats.includes(o.material)) o.layers.enable(INK_LAYER);
     });
-    for (const m of targets) {
-      if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
-      const r = m.geometry.boundingSphere.radius * ((m.scale.x + m.scale.y + m.scale.z) / 3);
-      if (r < 0.035) continue; // tiny details stay clean
-      smoothNormals(m.geometry);
-      const hull = new THREE.Mesh(m.geometry, outlineMat);
-      hull.castShadow = false;
-      hull.userData.outline = true;
-      m.add(hull);
-    }
+    inkTargets.add(this);
   }
 
   // Gather the lowest parts of a leg (foot and toes) under an ankle pivot, so feet can stay
@@ -1078,9 +1010,9 @@ export class CreatureModel {
   }
 
   dispose() {
+    inkTargets.delete(this);
     this.root.traverse((obj) => {
       if (obj.geometry) obj.geometry.dispose();
-      if (obj.material === outlineMat) return; // shared by every model
       if (obj.material && obj.material.map) obj.material.map.dispose();
       if (obj.material) obj.material.dispose();
     });

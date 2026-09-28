@@ -176,6 +176,16 @@ This is the source of truth for decisions. Update it when a decision changes.
   (anticipation) → a snap in the last few frames before the first active frame → hold → eased
   recovery, plus a body lunge and a follow-through swell. Victims shake during hitstop.
 
+## Ink outlines (screen space)
+
+Per-part inverted-hull outlines were inconsistent (lines doubled where parts overlap and vanished
+where one part hid another). `src/ink.js` replaces them: character meshes go on `INK_LAYER`, solid
+stage pieces on `OCCLUDER_LAYER`; an `InkPass` renders a 4x-MSAA coverage + depth mask of the
+characters and draws ink where a pixel is just outside a silhouette (one continuous line, width
+from a world size clamped to 1.8-4.5 px) or next to a clearly nearer surface (inner lines). It is
+blended onto the frame and scissored to the characters' screen area. The composer (4x MSAA
+target) now always runs: RenderPass -> bloom (high quality only) -> ink -> OutputPass.
+
 ## Polish pass 2: movement & models
 
 - **Movement feel:** a hard flick bursts into an initial dash (so you can dash-dance), skid dust

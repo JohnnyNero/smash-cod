@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { STAGE } from './config.js';
+import { OCCLUDER_LAYER } from './ink.js';
 
 // Bake static decoration into one mesh per material: hundreds of stand blocks become a
 // couple of draw calls.
@@ -310,13 +311,15 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
   const stone = stoneTexture();
   stone.repeat.set(width / 2, 1);
   const topMat = [std(0x8e8a84, { map: stone }), std(0x8e8a84, { map: stone }), std(0xffffff, { map: field, r: 0.95 }), std(0x6e6a64), std(0x8e8a84, { map: stone }), std(0x8e8a84, { map: stone })];
-  scene.add(mesh(new THREE.BoxGeometry(width, 0.5, 6), topMat, 0, -0.25, 0));
+  // Solid stage pieces also hide the characters' ink lines when a fighter is behind them.
+  const occlude = (m) => { m.layers.enable(OCCLUDER_LAYER); return m; };
+  scene.add(occlude(mesh(new THREE.BoxGeometry(width, 0.5, 6), topMat, 0, -0.25, 0)));
   const trimMat = std(0xc9a24a, { m: 0.6, r: 0.4 });
   scene.add(mesh(new THREE.BoxGeometry(width + 0.1, 0.14, 0.18), trimMat, 0, -0.05, 3.02));
   const sideTrim = mesh(new THREE.BoxGeometry(0.18, 0.14, 6), trimMat, S.left, -0.05, 0);
   scene.add(sideTrim, sideTrim.clone().translateX(width));
   const wallMat = std(0x77726c, { map: stone });
-  scene.add(mesh(new THREE.BoxGeometry(width - 0.4, 1.8, 5.6), wallMat, 0, -1.4, 0));
+  scene.add(occlude(mesh(new THREE.BoxGeometry(width - 0.4, 1.8, 5.6), wallMat, 0, -1.4, 0)));
   const lightMat = std(0x000000, { e: 0xffc870, ei: 3 });
   for (let x = S.left + 0.8; x <= S.right - 0.6; x += 1.6) {
     statics.push(mesh(new THREE.BoxGeometry(0.3, 0.3, 0.06), lightMat, x, -1.2, 2.82, false));
@@ -334,7 +337,7 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
     }
   }
   rock.geometry.computeVertexNormals();
-  scene.add(rock);
+  scene.add(occlude(rock));
   const crystalMat = new THREE.MeshStandardMaterial({ color: 0x9a7aff, emissive: 0x7a4aff, emissiveIntensity: 1.6, roughness: 0.2, flatShading: true });
   const crystals = [];
   for (let i = 0; i < 9; i++) {
@@ -367,7 +370,7 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
   const slabMat = std(0x8e8a84, { map: stone });
   for (const p of STAGE.platforms) {
     const g = new THREE.Group();
-    g.add(mesh(new THREE.BoxGeometry(p.w, 0.26, 2.4), slabMat, 0, -0.13, 0));
+    g.add(occlude(mesh(new THREE.BoxGeometry(p.w, 0.26, 2.4), slabMat, 0, -0.13, 0)));
     g.add(mesh(new THREE.BoxGeometry(p.w + 0.06, 0.08, 0.1), trimMat, 0, -0.03, 1.22, false));
     const c = mesh(new THREE.OctahedronGeometry(0.4, 0), crystalMat, 0, -0.7, 0, false);
     c.scale.y = 1.6;

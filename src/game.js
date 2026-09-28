@@ -12,7 +12,8 @@ import { loadTeam, saveTeam, randomTeam, cycleSpecies, cycleMove, matchupScore, 
 import { PUMMEL } from './data/moves.js';
 import { damageFor, moveEffect } from './damage.js';
 import { Fighter } from './fighter.js';
-import { CreatureModel, glowMat, setOutlineResolution } from './models/creature.js';
+import { CreatureModel, glowMat, STYLE } from './models/creature.js';
+import { InkPass } from './ink.js';
 import { buildStage } from './stage.js';
 import { Effects } from './effects.js';
 import { CpuBrain } from './ai.js';
@@ -75,15 +76,18 @@ export class Game {
     this.stage = buildStage(this.scene, { shadowSize: low ? 1024 : 2048 });
     this.effects = new Effects(this.scene);
 
+    // Multisampled target so the post-processing chain keeps antialiasing.
+    this.composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
     if (!low) {
-      // Multisampled target: without it the post-processing path loses antialiasing and the
-      // ink outlines stair-step.
-      this.composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
-      this.composer.addPass(new RenderPass(this.scene, this.camera));
       this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.5, 0.82);
       this.composer.addPass(this.bloom);
-      this.composer.addPass(new OutputPass());
     }
+    if (STYLE === 'toon') {
+      this.ink = new InkPass(this.scene, this.camera);
+      this.composer.addPass(this.ink);
+    }
+    this.composer.addPass(new OutputPass());
 
     this.ui = new UI(uiRoot);
     this.ui.onAction = (a) => this.handleAction(a);
@@ -123,12 +127,12 @@ export class Game {
     const pr = Math.max(0.6, this.basePixelRatio * this.dyn.scale);
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h);
-    setOutlineResolution(w * pr, h * pr, pr);
+    if (this.ink) this.ink.pixelRatio = pr;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     if (this.composer) {
       this.composer.setSize(w, h);
-      this.bloom.resolution.set(w / 2, h / 2);
+      if (this.bloom) this.bloom.resolution.set(w / 2, h / 2);
     }
   }
 
@@ -872,8 +876,8 @@ export class Game {
       q.scale = Math.max(0.5, q.scale - 0.15);
       q.t = 0;
       this.resize();
-    } else if (slow && this.composer) {
-      this.composer = null; // bloom is the next most expensive thing
+    } else if (slow && this.bloom && this.bloom.enabled) {
+      this.bloom.enabled = false; // bloom is the next most expensive thing
       q.t = 0;
     } else if (fast && q.t > 10 && q.scale + 0.1 <= q.max) {
       q.scale += 0.1;
