@@ -19,12 +19,17 @@ export const OCCLUDER_LAYER = 2;
 export const inkTargets = new Set();
 
 const maskMat = new THREE.ShaderMaterial({
+  // Skinning chunks so rigged (SkinnedMesh) characters are masked in their current pose.
   vertexShader: `
+    #include <common>
+    #include <skinning_pars_vertex>
     varying float vDepth;
     void main() {
-      vec4 mv = modelViewMatrix * vec4(position, 1.0);
-      vDepth = -mv.z;
-      gl_Position = projectionMatrix * mv;
+      #include <skinbase_vertex>
+      #include <begin_vertex>
+      #include <skinning_vertex>
+      #include <project_vertex>
+      vDepth = -mvPosition.z;
     }`,
   fragmentShader: `
     varying float vDepth;

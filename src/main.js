@@ -2,9 +2,12 @@ import './style.css';
 import { InputManager } from './input.js';
 import { Audio } from './audio.js';
 import { Game } from './game.js';
+import { preloadRigs } from './models/rig.js';
 
 const input = new InputManager();
 const audio = new Audio();
+// Load the Pokémon models first (about 2 MB); the game falls back to procedural models if not.
+await preloadRigs();
 const game = new Game(document.getElementById('game'), document.getElementById('ui'), input, audio);
 
 // Browsers only allow audio after a user gesture.

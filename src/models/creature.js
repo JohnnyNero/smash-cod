@@ -8,6 +8,7 @@
 
 import * as THREE from 'three';
 import { BUILDERS } from './species.js';
+import { hasRig, buildRig } from './rig.js';
 import { INK_LAYER, inkTargets } from '../ink.js';
 
 const damp = (a, b, rate, dt) => a + (b - a) * (1 - Math.exp(-rate * dt));
@@ -129,13 +130,16 @@ export class CreatureModel {
     this.pivot.add(this.body);
 
     this.j = {};
-    this.parts = BUILDERS[species.model](this, colors);
+    // Real rigged model when it loaded, else the procedural one.
+    this.parts = hasRig(species.model)
+      ? buildRig(this, species.model, colors, (c, o) => this.mat(c, o))
+      : BUILDERS[species.model](this, colors);
     this.eyes = [];
     this.body.traverse((o) => { if (o.userData.eye) this.eyes.push(o); });
     if (STYLE === 'toon') this.addOutlines();
     const limbs = [['legL', 'kneeL'], ['legR', 'kneeR']];
     if (this.parts.quadruped) limbs.push(['armL', 'elbowL'], ['armR', 'elbowR']);
-    this.feet = limbs.map(([l, k]) => this.makeAnkle(l, k)).filter(Boolean);
+    this.feet = this.parts.rig ? this.parts.feet : limbs.map(([l, k]) => this.makeAnkle(l, k)).filter(Boolean);
     this.springs = { tail: new Spring(120, 9), tailZ: new Spring(90, 8), ear: new Spring(160, 10), bob: new Spring(200, 16) };
     this.prevV = { x: 0, y: 0 };
     this.blinkT = 2 + Math.random() * 3;
@@ -192,7 +196,7 @@ export class CreatureModel {
   // Ink outlines are drawn in screen space (src/ink.js) around everything on INK_LAYER.
   addOutlines() {
     this.body.traverse((o) => {
-      if (o.isMesh && this.mats.includes(o.material)) o.layers.enable(INK_LAYER);
+      if (o.isMesh && [].concat(o.material).some((m) => this.mats.includes(m))) o.layers.enable(INK_LAYER);
     });
     inkTargets.add(this);
   }
@@ -974,6 +978,7 @@ export class CreatureModel {
     }
 
     if (this.parts.update) this.parts.update(v, t, dt, this.springs);
+    if (this.parts.retarget) this.parts.retarget(); // rigged model: joints -> bones
 
     // Blink every few seconds.
     this.blinkT -= dt;
@@ -1012,9 +1017,13 @@ export class CreatureModel {
   dispose() {
     inkTargets.delete(this);
     this.root.traverse((obj) => {
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material && obj.material.map) obj.material.map.dispose();
-      if (obj.material) obj.material.dispose();
+      // Rigged models share geometry and textures with the loaded glTF (and other clones).
+      const shared = obj.userData.sharedGeometry;
+      if (obj.geometry && !shared) obj.geometry.dispose();
+      for (const m of [].concat(obj.material || [])) {
+        if (m.map && !shared) m.map.dispose();
+        m.dispose();
+      }
     });
   }
 }

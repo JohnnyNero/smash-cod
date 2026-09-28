@@ -75,7 +75,8 @@ cel-shaded with outlines; add `?style=lowpoly` for the original faceted look.
 | `src/fighter.js` | Fighter state machine (no rendering) |
 | `src/game.js` | Match flow, hit resolution, projectiles, grabs, KOs, camera, menus |
 | `src/models/creature.js` | Creature rig and code-driven animation |
-| `src/models/species.js` | Per-species low-poly model builders |
+| `src/models/species.js` | Per-species low-poly model builders (fallback) |
+| `src/models/rig.js` | Loads the real Pokémon models (`public/models/*.glb`) and retargets our animation onto their bones |
 | `src/team.js` | Team building, validation (Species Clause, legal moves), saving, matchup scoring |
 | `src/ai.js` | CPU opponent |
 | `src/input.js`, `src/touch.js` | Gamepads, keyboard, touch |

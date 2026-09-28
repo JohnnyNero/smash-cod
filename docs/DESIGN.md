@@ -15,7 +15,7 @@ This is the source of truth for decisions. Update it when a decision changes.
 | Guns / soldiers | Removed. Replaced with a Smash moveset. |
 | Pokémon | Real Pokémon, real Showdown data (stats, types, moves, PP). |
 | Data source | `@pkmn/dex` (MIT-licensed Pokémon Showdown data), extracted at build time by `npm run gen:dex` into `src/data/dex.js` (13 KB) so the 50 MB package never ships. |
-| 3D models | Built procedurally in code, low-poly, to match the existing look. No ripped assets. |
+| 3D models | Real rigged Pokémon models (game rips from github.com/Pokemon-3D-api/assets, private hobby use) driven by our procedural animation; the procedural models remain as a fallback (`?models=procedural`). |
 | Mode (first version) | **Showdown mode**: fully evolved teams. Journey (evolve mid-fight) mode later. |
 | Team | Build a team of **3**. Each Pokémon is one stock. Lose all 3 = lose. |
 | Team builder | **Full builder**: 4 moves per Pokémon from its learnset (ability, item, Tera come later). Saved locally. |
@@ -185,6 +185,24 @@ characters and draws ink where a pixel is just outside a silhouette (one continu
 from a world size clamped to 1.8-4.5 px) or next to a clearly nearer surface (inner lines). It is
 blended onto the frame and scissored to the characters' screen area. The composer (4x MSAA
 target) now always runs: RenderPass -> bloom (high quality only) -> ink -> OutputPass.
+
+## Real Pokémon models
+
+- `public/models/<species>.glb`: the six roster models from Pokemon-3D-api/assets (Draco-decoded,
+  WebP textures, about 1.9 MB total), skinned with GameFreak-style bone names. Loaded before the
+  game starts (`preloadRigs` in `src/models/rig.js`); on failure the procedural models are used.
+- `buildRig` clones the skinned scene per fighter, converts materials to our toon material (the
+  texture is kept, plus rim light and hit flashes), normalises height to the species size with feet
+  on the floor, and maps our joints to bones (hips/torso/head/arms/elbows/legs/knees/ankles/tail/
+  ears, with chains sharing a rotation). creature.js poses dummy joints exactly as before;
+  `retarget()` writes them to the bones as `P⁻¹ · R · C · P · qRest` (P = parent rest rotation in
+  model space, C = rest correction that drops T-posed arms to hang). IK segment lengths come from
+  bone positions.
+- Extras: Charizard's wings flap on their bone chains and its tail flame (meshes skinned to TailA*)
+  is an additive glow that flickers; Lucario's aura dreadlocks swing. The ink mask shader supports
+  skinning.
+- Known gaps: rigged Pikachu runs upright (its mesh is weighted to the hips, so the all-fours run
+  needs its own pass); no blinking; Charizard's long tail is purely visual.
 
 ## Polish pass 2: movement & models
 
