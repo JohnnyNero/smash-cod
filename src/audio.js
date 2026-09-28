@@ -168,6 +168,16 @@ export class Audio {
     this.tone(880, 0.6, { type: 'sawtooth', freqEnd: 110, gain: 0.15, x });
   }
 
+  // Finishing-blow ping (Smash's "zoom" hit): a bright bell, bigger for match-ending KOs.
+  finish(x, final) {
+    this.tone(1760, final ? 0.9 : 0.4, { type: 'sine', gain: 0.22, x });
+    this.tone(2637, final ? 0.7 : 0.3, { type: 'sine', gain: 0.12, delay: 0.015, x });
+    if (final) {
+      this.tone(880, 1.1, { type: 'triangle', freqEnd: 440, gain: 0.12, delay: 0.05, x });
+      this.noise(0.9, { type: 'bandpass', freq: 5000, freqEnd: 800, gain: 0.25, x });
+    }
+  }
+
   ui() { this.tone(880, 0.05, { type: 'square', gain: 0.06 }); }
   uiConfirm() {
     this.tone(660, 0.08, { type: 'square', gain: 0.08 });

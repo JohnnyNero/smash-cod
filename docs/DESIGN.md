@@ -204,6 +204,16 @@ target) now always runs: RenderPass -> bloom (high quality only) -> ink -> Outpu
 - KO% table and scripts: `ko.mjs` style sims (attacker Lucario, centre stage): forward smash KOs
   Pikachu ~80%, Blastoise ~115% (145% with good DI).
 
+## Finishing blow & off-screen bubbles
+
+- `Game.predictKO` replays the launch physics (hitstun gravity, knockback decay, landing on the
+  stage) over the hitstun and calls it a KO only if it still is with the best DI either way. A KO
+  hit then triggers `finishHit`: extra hitlag, slow motion (0.12x for 1.2 s real time on a
+  match-ending KO, 0.35x for 0.35 s otherwise), the camera zooming onto the impact, a screen flash
+  (red for match-ending) and a bell ping. In CPU tests 13 of 15 zooms were real KOs.
+- Fighters past the screen edge (but inside the blast zones) show a bubble pinned to the edge
+  with their initial and %, shrinking with distance.
+
 ## Real Pokémon models
 
 - `public/models/<species>.glb`: the six roster models from Pokemon-3D-api/assets (Draco-decoded,

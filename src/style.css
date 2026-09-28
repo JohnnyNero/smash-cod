@@ -416,3 +416,27 @@ b { color: var(--gold); }
 .pick-mon .mu.good { color: #7ae07a; }
 .pick-mon .mu.bad { color: #ff8a5a; }
 @media (max-height: 520px) { .pp { grid-template-columns: 20px auto auto; } }
+
+/* Finishing blow flash */
+.finish-flash {
+  position: absolute; inset: 0; pointer-events: none; z-index: 40;
+  background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.0) 30%, rgba(255,255,255,0.55) 100%);
+  animation: finishFlash 0.45s ease-out forwards;
+}
+.finish-flash.final {
+  background: radial-gradient(circle at 50% 50%, rgba(255,40,40,0.0) 25%, rgba(200,0,20,0.55) 100%);
+  animation: finishFlash 1.3s ease-out forwards;
+}
+@keyframes finishFlash { 0% { opacity: 1; } 15% { opacity: 0.9; } 100% { opacity: 0; } }
+
+/* Off-screen fighter bubbles */
+.offscreen {
+  position: absolute; left: 0; top: 0; z-index: 30; pointer-events: none;
+  width: 58px; height: 58px; border-radius: 50%;
+  background: rgba(20,16,30,0.85); border: 3px solid var(--pc, #fff);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: #fff; font-family: 'Black Ops One', Impact, sans-serif; line-height: 1;
+  box-shadow: 0 0 12px var(--pc, #fff);
+}
+.offscreen b { font-size: 22px; color: var(--pc, #fff); }
+.offscreen span { font-size: 12px; margin-top: 2px; }

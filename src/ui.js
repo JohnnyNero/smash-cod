@@ -387,6 +387,41 @@ export class UI {
     setTimeout(() => item.remove(), 4600);
   }
 
+  // Full-screen flash for a finishing blow (red for a match-ending KO).
+  finishFlash(final) {
+    const d = el('div', `finish-flash${final ? ' final' : ''}`);
+    this.root.appendChild(d);
+    setTimeout(() => d.remove(), final ? 1400 : 500);
+  }
+
+  // Off-screen fighters: a bubble pinned to the screen edge, pointing at them, with their %.
+  updateBubbles(list) {
+    this.bubbles ||= {};
+    const seen = new Set();
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    for (const b of list) {
+      seen.add(b.slot);
+      let e = this.bubbles[b.slot];
+      if (!e) {
+        e = el('div', 'offscreen');
+        e.innerHTML = '<b></b><span></span>';
+        this.root.appendChild(e);
+        this.bubbles[b.slot] = e;
+      }
+      const m = 46;
+      const px = Math.min(W - m, Math.max(m, (b.x * 0.5 + 0.5) * W));
+      const py = Math.min(H - m, Math.max(m, (1 - (b.y * 0.5 + 0.5)) * H));
+      const scale = Math.max(0.55, 1 - b.dist * 0.5);
+      e.style.transform = `translate(${px}px, ${py}px) translate(-50%, -50%) scale(${scale})`;
+      e.style.setProperty('--pc', b.color);
+      e.querySelector('b').textContent = b.label;
+      e.querySelector('span').textContent = `${b.pct}%`;
+      e.style.display = '';
+    }
+    for (const [slot, e] of Object.entries(this.bubbles)) if (!seen.has(+slot)) e.style.display = 'none';
+  }
+
   showPause(show) {
     this.screens.pause.classList.toggle('hidden', !show);
     if (show) {

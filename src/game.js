@@ -5,7 +5,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { SIM_DT, STAGE, SHIELD, COMBAT, PLAYER_COLORS, RULES, TYPE_COLORS } from './config.js';
+import { SIM_DT, STAGE, SHIELD, COMBAT, PHYS, PLAYER_COLORS, RULES, TYPE_COLORS } from './config.js';
 import { SPECIES, SPECIES_LIST } from './data/pokemon.js';
 import { SLOTS, moveInfo } from './data/moveset.js';
 import { loadTeam, saveTeam, randomTeam, cycleSpecies, cycleMove, matchupScore, member } from './team.js';
@@ -496,6 +496,9 @@ export class Game {
   }
 
   clearMatch() {
+    this.fz = null;
+    this.timeScale = 1;
+    if (this.ui.updateBubbles) this.ui.updateBubbles([]);
     for (const p of this.players) {
       for (const f of p.team) {
         this.scene.remove(f.model.root);
@@ -779,6 +782,11 @@ export class Game {
     }
     this.realTime += dt;
     const devs = () => this.humanDevices();
+    if (this.fz) {
+      this.fz.t -= dt;
+      if (this.state === 'playing') this.timeScale = this.fz.t > 0 ? (this.fz.final ? 0.12 : 0.35) : 1;
+      if (this.fz.t <= 0) this.fz = null;
+    }
 
     switch (this.state) {
       case 'title':
@@ -1063,6 +1071,7 @@ export class Game {
       if (superEff) stop = Math.min(COMBAT.hitstopMax + 6, stop + 6);
       this.hitstop = Math.max(this.hitstop, stop);
       this.shake(0.08 + res.launch * 0.018 + (superEff ? 0.25 : 0));
+      if (!this.demo && this.state === 'playing' && res.launch > 8 && this.predictKO(d)) this.finishHit(d, hx, hy);
       this.audio.hit(hx, dmg.damage, move.type);
       if (heavy) this.audio.launch(hx, res.launch);
       if (!this.demo && move.type && dmg.eff !== 1 && dmg.damage >= 2.5) {
@@ -1093,6 +1102,55 @@ export class Game {
       this.hitstop = Math.max(this.hitstop, Math.min(COMBAT.hitstopMax, Math.round(COMBAT.hitstopBase + dmg.damage * COMBAT.hitstopPerDamage)));
     }
     return res;
+  }
+
+  // Will this launch carry the fighter past a blast zone before hitstun ends (ignoring DI)?
+  // Mirrors Fighter.physics for a launched fighter.
+  predictKO(f) {
+    // Only call it a KO if it still is with the best DI either way.
+    const sp = Math.hypot(f.vel.x, f.vel.y);
+    const th = Math.atan2(f.vel.y, f.vel.x);
+    const di = (COMBAT.diMaxDeg * Math.PI) / 180;
+    return [-di, 0, di].every((d) => this.predictPath(f, Math.cos(th + d) * sp, Math.sin(th + d) * sp));
+  }
+
+  predictPath(f, vx0, vy0) {
+    const B = STAGE.blast;
+    const S = STAGE.main;
+    const st = f.st;
+    let { x, y } = f.pos;
+    let vx = vx0;
+    let vy = vy0;
+    const g = PHYS.gravity * st.gravity * PHYS.hitstunGravity * SIM_DT;
+    const toward = (v, t, step) => (v < t ? Math.min(v + step, t) : Math.max(v - step, t));
+    const steps = Math.ceil((f.hitstun + 0.3) * 60);
+    for (let i = 0; i < steps; i++) {
+      vy = Math.max(vy - g, -st.maxFall);
+      vx = Math.abs(vx) > st.airSpeed ? toward(vx, Math.sign(vx) * st.airSpeed, PHYS.kbDecay * SIM_DT) : toward(vx, 0, PHYS.airFriction * SIM_DT);
+      x += vx * SIM_DT;
+      y += vy * SIM_DT;
+      if (vy < 0 && y <= S.top && y > S.top - 1 && x > S.left && x < S.right) return false; // lands
+      if (x < B.left || x > B.right || y > B.top || y < B.bottom) return true;
+    }
+    return false;
+  }
+
+  // Would KO-ing this fighter end the match? (last Pokémon in team mode, last stock in stock mode)
+  isFinalKO(f) {
+    if (this.teamMode) return this.players[f.slot].team.every((t) => t === f || t.eliminated);
+    return this.mode === 'STOCK' && f.stocks <= 1;
+  }
+
+  // Smash's finishing blow: slow motion, zoom onto the impact, a flash and a ping. Match-ending
+  // KOs get the full version; other KO hits a short one.
+  finishHit(d, x, y) {
+    const final = this.isFinalKO(d);
+    this.fz = { t: final ? 1.2 : 0.35, x, y, final };
+    this.hitstop = Math.max(this.hitstop, final ? 14 : 8);
+    this.shake(final ? 0.6 : 0.3);
+    this.ui.finishFlash(final);
+    this.audio.finish(x, final);
+    this.stage.cheer(final ? 1 : 0.5);
   }
 
   onBoost(f, text) {
@@ -1423,7 +1481,22 @@ export class Game {
       if (pr.p.visual === 'flame') pr.mesh.scale.setScalar(0.7 + (1 - pr.life / pr.p.life) * 1.2);
     }
     this.effects.update(dt);
+    if (!this.demo) this.updateBubbles();
     if (!this.demo && this.fighters.length) this.ui.updateHUD(this.players, this.settings, this.timeLeft, this.teamMode);
+  }
+
+  // Fighters off the edge of the screen (but not KO'd) show as a bubble at the edge.
+  updateBubbles() {
+    const list = [];
+    const v = new THREE.Vector3();
+    this.fighters.forEach((f, i) => {
+      if (!f || !f.active || this.state === 'results') return;
+      v.set(f.pos.x, f.pos.y + f.h * 0.5, 0).project(this.camera);
+      if (Math.abs(v.x) <= 1.02 && Math.abs(v.y) <= 1.02) return;
+      const dist = Math.hypot(Math.max(0, Math.abs(v.x) - 1), Math.max(0, Math.abs(v.y) - 1));
+      list.push({ slot: i, x: v.x, y: v.y, dist, label: f.sp.name[0], pct: Math.floor(f.percent), color: f.colors.css });
+    });
+    this.ui.updateBubbles(list);
   }
 
   updateCamera(dt) {
@@ -1459,13 +1532,18 @@ export class Game {
         tx = champ.pos.x + (this.camera.aspect > 1.2 ? 3 : 0);
         ty = champ.pos.y + champ.h * 0.6;
         td = 8.5;
+      } else if (this.fz) {
+        // Finishing blow: zoom onto the impact.
+        tx = this.fz.x;
+        ty = this.fz.y;
+        td = this.fz.final ? 7 : Math.max(10, td * 0.75);
       } else if (this.state === 'title') {
         tx = Math.sin(this.realTime * 0.15) * 3;
         ty = 3;
         td = Math.max(td, 28);
       }
     }
-    const k = 1 - Math.exp(-dt * 4);
+    const k = 1 - Math.exp(-dt * (this.fz ? 10 : 4));
     c.x += (tx - c.x) * k;
     c.y += (ty - c.y) * k;
     c.dist += (td - c.dist) * k;
