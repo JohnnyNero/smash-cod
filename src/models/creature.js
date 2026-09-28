@@ -284,7 +284,18 @@ export class CreatureModel {
     // ---- locomotion: the stride is tied to distance travelled so feet don't skate
     const speed = Math.abs(v.vx);
     const run = Math.min(1, speed / (v.runSpeed || 8));
-    pv.gait = damp(pv.gait, grounded && v.state === 'ground' ? run : 0, 9, dt);
+    pv.gait = damp(pv.gait, grounded && v.state === 'ground' ? (v.dash ? 1 : v.skid ? 0 : run) : 0, v.dash ? 30 : 9, dt);
+
+    // Edge-triggered events: dash start (lean kick + smear), take-off (stretch), landing
+    // (a spring impulse that sinks the body and rebounds).
+    if (v.dash && !this.prevDash) { pv.lean += 0.3; pv.smear = 0.3; }
+    this.prevDash = v.dash;
+    if (this.prevState === 'jumpsquat' && v.state === 'air') this.takeoffT = 0.1;
+    this.prevState = v.state;
+    if (v.landSquash > (this.prevLand || 0) + 0.05) this.springs.bob.v -= 14 * v.landSquash;
+    this.prevLand = v.landSquash;
+    this.takeoffT = Math.max(0, (this.takeoffT || 0) - dt);
+    pv.smear = Math.max(0, (pv.smear || 0) - dt * 3);
     const gait = pv.gait;
     if (grounded) {
       const before = Math.floor(this.phase / Math.PI);
@@ -371,6 +382,18 @@ export class CreatureModel {
       }
       if (v.state === 'jumpsquat') { bodyY -= 0.12; stretch -= 0.1; o.armL.x = o.armR.x = 0.5; o.elbowL.x = o.elbowR.x = -0.3; o.torso.x += 0.25; }
       else if (v.state === 'landlag') { bodyY -= 0.08; o.torso.x += 0.25; o.armL.z = 0.5; o.armR.z = -0.5; }
+      if (v.skid) {
+        // Braking: lean back, front foot braced out ahead, arms thrown out for balance.
+        o.torso.x = -0.4;
+        o.head.x = 0.25;
+        o.legL.x = -0.65; o.legR.x = 0.15;
+        o.kneeL.x = 0.15; o.kneeR.x = 0.75;
+        o.armL.x = -0.9; o.armR.x = -0.5;
+        o.armL.z = 0.6; o.armR.z = -0.6;
+        o.elbowL.x = o.elbowR.x = -0.3;
+        o.tail.x = -0.5;
+        bodyY = -0.07;
+      }
     } else if (v.state === 'air' || v.state === 'helpless') {
       // Blend continuously from the rising tuck to the falling spread.
       const k = Math.max(-1, Math.min(1, v.vy / 12));
@@ -389,7 +412,7 @@ export class CreatureModel {
       o.head.x = -0.2 * up + 0.12 * down;
       o.tail.x = 0.4 * down - 0.3 * up;
       o.earL.x = o.earR.x = 0.35 * up - 0.3 * down;
-      stretch = Math.min(0.14, Math.abs(v.vy) * 0.006) * (v.vy > 0 ? 1 : 0.6);
+      stretch = Math.min(0.14, Math.abs(v.vy) * 0.006) * (v.vy > 0 ? 1 : 0.6) + this.takeoffT * 1.5;
       if (v.flip >= 0) {
         // Double jump: a quick front flip, tucked tight.
         const kf = 1 - (1 - v.flip) ** 3;
@@ -888,8 +911,11 @@ export class CreatureModel {
     // ---- apply: joints follow their targets through slightly springy (underdamped) motion,
     // so poses flow into each other with a little overshoot instead of snapping.
     const atk = v.state === 'attack';
-    const w = atk ? 62 : v.state === 'hitstun' ? 40 : 30;
-    const zeta = atk ? 0.78 : 0.62;
+    // Short states (3-frame jumpsquat, landings, dashes, skids) need stiff joints or the pose
+    // never arrives before the state is over.
+    const snappy = v.state === 'jumpsquat' || v.state === 'landlag' || v.dash || v.skid || this.takeoffT > 0;
+    const w = atk ? 62 : snappy ? 60 : v.state === 'hitstun' ? 40 : 30;
+    const zeta = atk ? 0.78 : snappy ? 0.75 : 0.62;
     const n = Math.max(1, Math.ceil(dt / (1 / 120)));
     const h = dt / n;
     const w2 = w * w;
@@ -912,7 +938,7 @@ export class CreatureModel {
     }
     // Feet stay flat on the ground while grounded (ankles counter the leg swing); in the air
     // they point their toes a little.
-    const plant = grounded ? 0.85 : 0;
+    const plant = grounded ? (v.skid ? 1 : 0.85) : 0;
     for (const ankle of this.feet) {
       const u = ankle.userData;
       const swing = this.cur[u.leg].x + (u.knee ? this.cur[u.knee].x : 0);
@@ -922,6 +948,7 @@ export class CreatureModel {
     pv.lunge = damp(pv.lunge, lunge * this.h, atk ? 35 : 12, dt);
     pv.curl = damp(pv.curl, curl, 25, dt);
     pv.stretch = damp(pv.stretch, stretch + v.landSquash * -0.22, 22, dt);
+    if (v.state === 'jumpsquat') { pv.bodyY = bodyY; pv.stretch = -0.18; } // snap into the crouch
     // Flips and spins are driven directly so they complete cleanly.
     pv.rotX = atk || v.flip >= 0 || rotX === 0 ? rotX : damp(pv.rotX, rotX, 20, dt);
     pv.rotY = rotY;
@@ -930,15 +957,17 @@ export class CreatureModel {
     this.pivot.rotation.set(pv.rotX, pv.rotY, 0);
     const st = Math.max(-0.3, Math.min(0.25, pv.stretch));
     const side = 1 - st * 0.6; // keep volume: stretch tall and thin, squash short and wide
-    this.pivot.scale.set(pv.curl * side, pv.curl * (1 + st), pv.curl * side);
+    this.pivot.scale.set(pv.curl * side, pv.curl * (1 + st), pv.curl * side * (1 + pv.smear * 0.5));
 
     const targetYaw = v.yaw ?? (v.facing > 0 ? Math.PI / 2 - 0.3 : -Math.PI / 2 + 0.3);
     // Turn with a quick, slightly overshooting whip.
     const yv = this.yawV || 0;
+    // Turn fast when moving (dash-dances and pivots read in ~4 frames), lazily when idle.
+    const yw = grounded && (Math.abs(v.vx) > 1 || v.dash || v.skid) ? 55 : 26;
     let yaw = this.yaw;
     let yvel = yv;
     for (let i = 0; i < n; i++) {
-      yvel += (26 * 26 * (targetYaw - yaw) - 2 * 0.7 * 26 * yvel) * h;
+      yvel += (yw * yw * (targetYaw - yaw) - 2 * 0.7 * yw * yvel) * h;
       yaw += yvel * h;
     }
     this.yaw = yaw;

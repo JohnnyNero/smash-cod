@@ -1347,6 +1347,8 @@ export class Game {
       p: inMove ? Math.min(1, (f.moveF + (this.hitstop > 0 || f.charging ? 0 : this.alpha || 0)) / f.move.total)
         : f.state === 'getup' ? f.sf / (f.getupTotal || 1) : 0,
       shake: this.hitstop > 0 && f.state === 'hitstun' ? 1 : 0,
+      dash: f.state === 'ground' && f.dashF > 0,
+      skid: f.state === 'ground' && f.skidF > 0,
       charging: f.charging, tumble: f.tumble, dodge: f.dodge && f.dodge.kind, intangible: f.intangible,
       shieldFrac: Math.max(0, f.shieldHP / SHIELD.hp), flash: f.flash, invuln: f.invuln > 0 || f.onRevival,
       landSquash: f.landSquash, zipDir: f.zip ? { x: f.zip.vx, y: f.zip.vy } : null,

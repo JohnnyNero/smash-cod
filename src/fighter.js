@@ -5,12 +5,13 @@
 // States: ground, air, jumpsquat, attack, landlag, shield, shieldbreak, dodge, holding, held,
 // hitstun, ledge, getup, helpless, sleep, switching.
 
-import { PHYS, COMBAT, SHIELD, DODGE, LEDGE, STAGE } from './config.js';
+import { PHYS, COMBAT, SHIELD, DODGE, LEDGE, STAGE, INPUT } from './config.js';
 import { THROWS, PUMMEL } from './data/moves.js';
 import { buildMoveset } from './data/moveset.js';
 import { fighterStats } from './data/pokemon.js';
 
 const DT = 1 / 60;
+const BUFFERED = ['jump', 'attack', 'special', 'shield', 'grab', 'smash'];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const approach = (v, target, step) => (v < target ? Math.min(v + step, target) : Math.max(v - step, target));
 
@@ -50,6 +51,8 @@ export class Fighter {
       ledge: null, ledgeInvuln: 0, ledgeCooldown: 0, getupKind: null, getupFrom: null,
       shieldPressedAt: -99, prevMag: 0, flickT: 99, flickX: 0, flickY: 0, sx: 0, sy: 0,
       landSquash: 0, t: 0,
+      buf: {}, bufFlick: null, bufStick: null, forceShortHop: false, softLand: false,
+      dashF: 0, dashDir: 1, skidF: 0,
       boosts: {}, sleepFrames: 0, seed: null, destinyBond: 0,
     });
     this.st = fighterStats(this.sp);
@@ -90,6 +93,14 @@ export class Fighter {
   setState(s) {
     this.state = s;
     this.sf = 0;
+    if (s !== 'ground') { this.dashF = 0; this.skidF = 0; }
+  }
+
+  // Input buffer: an action that uses a press clears it so it can't fire twice.
+  consume(...btns) {
+    for (const b of btns) this.buf[b] = 0;
+    this.inp.pressed = { ...this.inp.pressed };
+    for (const b of btns) this.inp.pressed[b] = false;
   }
 
   toNeutral() {
@@ -140,13 +151,20 @@ export class Fighter {
         this.airDrift(0.6);
         break;
       case 'jumpsquat':
+        // Attack during jumpsquat = short hop + that aerial (the buffered attack comes out
+        // on the first airborne frame).
+        if (this.inp.pressed.attack || this.inp.pressed.smash) this.forceShortHop = true;
         if (this.sf >= 3) this.doJump();
         break;
       case 'attack':
         this.runMove();
         break;
       case 'landlag':
-        if (this.sf >= this.landLagF) this.toNeutral();
+        // A plain landing can be jumped or shielded out of straight away.
+        if (this.sf >= this.landLagF || (this.softLand && (this.inp.pressed.jump || this.inp.held.shield))) {
+          this.toNeutral();
+          if (canAct && this.state === 'ground') this.groundControl(); // buffered action comes out this frame
+        }
         break;
       case 'shield':
         this.shieldControl();
@@ -211,13 +229,26 @@ export class Fighter {
     this.sx = x;
     this.sy = y;
     if (inp.pressed.shield) this.shieldPressedAt = this.t;
+    // Buffer presses for a few frames so one made during lag (landing, end of a move,
+    // jumpsquat) comes out on the first frame you can act instead of being lost.
+    this.rawPressed = inp.pressed;
+    const pressed = { ...inp.pressed };
+    for (const b of BUFFERED) {
+      if (inp.pressed[b]) this.buf[b] = INPUT.buffer;
+      else if (this.buf[b] > 0) this.buf[b]--;
+      pressed[b] = this.buf[b] > 0;
+    }
+    // Remember whether an attack press was a smash (direction tapped just before it).
+    if (inp.pressed.attack) this.bufFlick = this.flickT <= COMBAT.flickFrames ? { x: this.flickX, y: this.flickY } : null;
+    if (inp.pressed.smash) this.bufStick = { x: inp.smashX || 0, y: inp.smashY || 0 };
+    this.inp = { ...inp, pressed };
   }
 
   // Tap a direction and attack together (or flick the right stick) for a smash attack.
   smashDir() {
     const inp = this.inp;
-    if (inp.pressed.smash) return { x: inp.smashX || 0, y: inp.smashY || 0 };
-    if (inp.pressed.attack && this.flickT <= COMBAT.flickFrames) return { x: this.flickX, y: this.flickY };
+    if (inp.pressed.smash) return this.bufStick || { x: inp.smashX || 0, y: inp.smashY || 0 };
+    if (inp.pressed.attack && this.bufFlick) return this.bufFlick;
     return null;
   }
 
@@ -234,13 +265,13 @@ export class Fighter {
     const inp = this.inp;
     const n = this.moveset.normals;
     if (inp.pressed.swap && this.tryStartSwitch()) return;
-    if (inp.pressed.jump) { this.setState('jumpsquat'); return; }
+    if (inp.pressed.jump) { this.consume('jump'); this.setState('jumpsquat'); return; }
     if (inp.pressed.grab || (inp.held.shield && inp.pressed.attack)) { this.startMove(n.grab); return; }
     if (inp.pressed.special) { this.startSpecial(); return; }
     const sm = this.smashDir();
     if (sm) { this.groundSmash(sm); return; }
     if (inp.pressed.attack) { this.groundAttack(); return; }
-    if (inp.held.shield) { this.setState('shield'); return; }
+    if (inp.held.shield || inp.pressed.shield) { this.consume('shield'); this.setState('shield'); return; }
     if (this.platform !== 'main' && this.flickT === 0 && this.flickY < -0.7) {
       this.dropTimer = 12;
       this.leaveGround();
@@ -249,18 +280,53 @@ export class Fighter {
     }
     const sx = this.sx;
     const fx = this.game.effects;
-    // Initial dash: a hard flick bursts straight to near full speed (and lets you dash-dance).
+    const run = this.st.runSpeed;
+    const brake = PHYS.groundFriction + PHYS.groundAccel * 0.5;
+    const frame = Math.round(this.t * 60);
+    // Initial dash: a hard flick bursts past run speed for a few frames. Flick back during it to
+    // dash-dance; reverse right at the end of it to pivot (turn and keep sliding).
     if (this.flickT === 0 && Math.abs(this.flickX) > 0.8 && Math.abs(this.flickX) >= Math.abs(this.flickY)) {
       const dir = Math.sign(this.flickX);
-      if (this.vel.x * dir < this.st.runSpeed * 0.6) {
-        this.vel.x = dir * this.st.runSpeed * 0.9;
+      if (this.dashF > 0 && dir !== this.dashDir && this.dashF <= 3) {
+        this.dashF = 0;
+        this.skidF = PHYS.skidFrames;
+        this.facing = dir;
+        this.pivoted = true;
+        fx.puff(this.pos.x, this.pos.y, -dir, 3);
+      } else if (this.dashF > 0 || this.skidF > 0 || Math.abs(this.vel.x) < run * 0.75) {
+        this.dashF = PHYS.dashFrames;
+        this.dashDir = dir;
+        this.skidF = 0;
+        this.facing = dir;
+        this.vel.x = dir * run * PHYS.dashSpeed;
         fx.puff(this.pos.x - dir * this.w * 0.3, this.pos.y, -dir, 5);
         this.game.audio.dash(this.pos.x);
       }
     }
-    // Skidding: reversing out of a run kicks up dust as the feet dig in.
-    if (sx && Math.sign(sx) !== Math.sign(this.vel.x) && Math.abs(this.vel.x) > this.st.runSpeed * 0.5 && Math.round(this.t * 60) % 4 === 0) {
-      fx.puff(this.pos.x, this.pos.y, Math.sign(this.vel.x), 2);
+    if (this.dashF > 0) {
+      this.dashF--;
+      this.vel.x = approach(this.vel.x, this.dashDir * run * PHYS.dashSpeed, PHYS.groundAccel * 2 * DT);
+      // Let go (or run out of dash without holding on) and you brake. One neutral frame is
+      // allowed, since flicking back for a dash-dance or pivot passes through neutral.
+      this.dashNeutral = sx ? 0 : (this.dashNeutral || 0) + 1;
+      if (this.dashNeutral > 1 || (this.dashF === 0 && Math.sign(sx) !== this.dashDir)) {
+        this.dashF = 0;
+        this.skidF = PHYS.skidFrames;
+      }
+      if (this.dashF > 0) return;
+    }
+    // Running, then letting go or reversing: skid to a stop, turning around at the end.
+    if (!this.skidF && Math.abs(this.vel.x) > run * 0.75 && (!sx || Math.sign(sx) !== Math.sign(this.vel.x))) {
+      this.skidF = PHYS.skidFrames;
+      this.pivoted = false;
+    }
+    if (this.skidF > 0) {
+      this.skidF--;
+      this.vel.x = approach(this.vel.x, 0, brake * DT);
+      if (Math.abs(this.vel.x) > 2 && frame % 3 === 0) fx.puff(this.pos.x, this.pos.y, Math.sign(this.vel.x), 2);
+      if (Math.abs(this.vel.x) < 0.3) this.skidF = 0;
+      if (this.skidF > 0) return;
+      if (sx) this.facing = Math.sign(sx);
     }
     if (sx) this.facing = Math.sign(sx);
     const speed = Math.abs(sx) > 0.6 ? this.st.runSpeed : this.st.runSpeed * 0.45;
@@ -290,7 +356,8 @@ export class Fighter {
   }
 
   doJump() {
-    const full = this.inp.held.jump;
+    const full = this.inp.held.jump && !this.forceShortHop;
+    this.forceShortHop = false;
     this.vel.y = full ? this.st.jump : this.st.jump * 0.72; // release early for a short hop
     this.vel.x = this.sx * this.st.airSpeed * 0.9 + this.vel.x * 0.3;
     this.leaveGround();
@@ -303,6 +370,7 @@ export class Fighter {
     const inp = this.inp;
     if (inp.pressed.swap && this.tryStartSwitch()) return;
     if (inp.pressed.jump && this.airJumps > 0) {
+      this.consume('jump');
       this.airJumps--;
       this.flipF = 20; // double-jump flip (visual)
       this.vel.y = this.st.doubleJump;
@@ -357,6 +425,7 @@ export class Fighter {
   // ------------------------------------------------------------------ moves
 
   startMove(m) {
+    if (this.inp) this.consume('attack', 'special', 'grab', 'smash');
     this.move = m;
     this.moveF = 0;
     this.curF = -1;
@@ -513,6 +582,7 @@ export class Fighter {
   }
 
   landLag(frames) {
+    this.softLand = false;
     this.move = null;
     this.zip = null;
     this.landLagF = frames;
@@ -525,7 +595,7 @@ export class Fighter {
     const inp = this.inp;
     this.vel.x = approach(this.vel.x, 0, PHYS.groundFriction * DT);
     if (this.shieldStun > 0) { this.shieldStun--; return; }
-    if (inp.pressed.jump) { this.setState('jumpsquat'); return; }
+    if (inp.pressed.jump) { this.consume('jump'); this.setState('jumpsquat'); return; }
     if (inp.pressed.attack || inp.pressed.grab) { this.startMove(this.moveset.normals.grab); return; }
     if (this.flickT === 0 && Math.abs(this.flickX) > 0.7 && Math.abs(this.flickX) >= Math.abs(this.flickY)) {
       this.startDodge('roll', Math.sign(this.flickX));
@@ -550,6 +620,7 @@ export class Fighter {
   }
 
   startDodge(kind, dir = 0) {
+    if (this.inp) this.consume('shield');
     const cfg = DODGE[kind];
     this.dodge = { kind, cfg, dir };
     if (kind === 'air') {
@@ -623,6 +694,7 @@ export class Fighter {
       return;
     }
     if (inp.pressed.attack && this.pummelCd <= 0) {
+      this.consume('attack');
       this.pummelCd = PUMMEL.every;
       this.game.pummel(this, v);
     }
@@ -663,7 +735,8 @@ export class Fighter {
       return;
     }
     // Mash to escape.
-    const mashed = inp.pressed.attack || inp.pressed.special || inp.pressed.jump || inp.pressed.shield || this.flickT === 0;
+    const raw = this.rawPressed; // mashing counts real presses, not buffered ones
+    const mashed = raw.attack || raw.special || raw.jump || raw.shield || this.flickT === 0;
     if (mashed && by.state === 'holding') by.holdTimer -= 5;
   }
 
@@ -736,6 +809,7 @@ export class Fighter {
     const toward = -this.ledge;
     if (this.sf > LEDGE.maxHangFrames) { this.dropLedge(); return; }
     if (inp.pressed.jump) {
+      this.consume('jump');
       const S = STAGE.main;
       this.ledge = null;
       this.pos.y = S.top + 0.05;
@@ -747,8 +821,8 @@ export class Fighter {
       this.game.audio.jump(this.pos.x, false);
       return;
     }
-    if (inp.pressed.attack || inp.pressed.special) { this.startGetup('attack'); return; }
-    if (inp.pressed.shield) { this.startGetup('roll'); return; }
+    if (inp.pressed.attack || inp.pressed.special) { this.consume('attack', 'special'); this.startGetup('attack'); return; }
+    if (inp.pressed.shield) { this.consume('shield'); this.startGetup('roll'); return; }
     if (this.sy > 0.6 || this.sx * toward > 0.6) { this.startGetup('climb'); return; }
     if (this.sy < -0.6 || this.sx * toward < -0.6) this.dropLedge();
   }
@@ -921,10 +995,25 @@ export class Fighter {
     const st = this.state;
     const m = this.move;
     this.touchDown(platform, impact);
-    if (st === 'attack' && m && (this.moveAir || this.moveLeftGround)) this.landLag(m.landLag ?? 8);
+    if (st === 'attack' && m && (this.moveAir || this.moveLeftGround)) {
+      // Auto-cancel: landing before an aerial's hitboxes come out, or after they finish,
+      // only costs a short landing, so short-hop aerials flow.
+      let lag = m.landLag ?? 8;
+      if (m.aerial && m.hitboxes && m.hitboxes.length) {
+        const first = Math.min(...m.hitboxes.map((h) => h.f[0]));
+        const last = Math.max(...m.hitboxes.map((h) => h.f[1]));
+        if (this.moveF < first || this.moveF > last + 4) lag = Math.min(lag, PHYS.autoCancelLag);
+      }
+      this.landLag(lag);
+    }
     else if (st === 'helpless') this.landLag(20);
     else if (st === 'dodge' && this.dodge && this.dodge.kind === 'air') { this.dodge = null; this.landLag(DODGE.air.landLag); }
-    else if (st === 'air') this.setState('ground');
+    else if (st === 'air') {
+      if (impact > 6) {
+        this.landLag(PHYS.emptyLanding);
+        this.softLand = true;
+      } else this.setState('ground');
+    }
     else if (st === 'hitstun') this.hitstun = Math.min(this.hitstun, 0.1);
     return top;
   }
@@ -1048,7 +1137,8 @@ export class Fighter {
     this.vel.x *= 0.9;
     this.sleepFrames--;
     const inp = this.inp;
-    if (inp.pressed.attack || inp.pressed.special || inp.pressed.jump || inp.pressed.shield || this.flickT === 0) this.sleepFrames -= 6;
+    const raw = this.rawPressed;
+    if (raw.attack || raw.special || raw.jump || raw.shield || this.flickT === 0) this.sleepFrames -= 6;
     if (this.sleepFrames <= 0) {
       this.toNeutral();
       this.game.popup(this.slot, 'WOKE UP');

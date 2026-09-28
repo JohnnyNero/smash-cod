@@ -12,6 +12,17 @@ export const PHYS = {
   groundFriction: 40,
   airAccel: 26,
   airFriction: 4,
+  // Dashing (Smash-style): a flick starts an initial dash faster than the run; flick back during
+  // it to dash-dance, reverse in its last frames to pivot. Letting go of a run skids to a stop.
+  dashFrames: 11,
+  dashSpeed: 1.1, // x run speed
+  skidFrames: 10,
+  emptyLanding: 3, // frames of landing lag after a normal jump (so landings have weight)
+  autoCancelLag: 3, // aerials landed before or after their hitboxes
+};
+
+export const INPUT = {
+  buffer: 7, // frames a press is remembered and used on the first frame you can act (Ultimate: 9)
 };
 
 export const COMBAT = {

@@ -207,6 +207,26 @@ This is the source of truth for decisions. Update it when a decision changes.
 Movement research (frame data, game-feel, procedural animation, and a prioritized change list):
 see [MOVEMENT_RESEARCH.md](MOVEMENT_RESEARCH.md).
 
+## Movement pass (research items 1–4)
+
+- **Input buffer:** jump/attack/special/shield/grab/smash presses are remembered for
+  `INPUT.buffer` = 7 frames (Ultimate: 9) and used on the first actionable frame; the action that
+  uses a press consumes it (`Fighter.consume`). Mashing (grabs, sleep) still counts raw presses.
+  Buffered actions out of landing lag come out on the same frame the lag ends.
+- **Landing:** aerials landed before their first hitbox or 4+ frames after their last one
+  auto-cancel into `PHYS.autoCancelLag` = 3 frames. Plain jumps land with 3 frames
+  (`emptyLanding`) that jump or shield can cancel. Attack during jumpsquat (or jump+attack
+  together) forces a short hop with the aerial coming out on the first airborne frame.
+- **Dash:** a flick starts an initial dash (`dashFrames` 11 at `dashSpeed` 1.1× run). Flick back
+  during it to dash-dance; reverse in its last 3 frames to pivot (face the other way, keep
+  sliding). One neutral frame is allowed inside a dash; two ends it in a skid. Letting go of or
+  reversing a run skids (`skidFrames` 10) and turns around at the end. Dash and skid are timers on
+  the ground state (`dashF`, `skidF`), so nothing else that checks `ground` changed.
+- **Animation for short states:** stiff joints (ω 60) during jumpsquat, landing, dash, skid and
+  take-off; jumpsquat snaps into its crouch; take-off stretch; landings kick the bob spring (sink
+  and rebound); dash start kicks the lean and smears the body forward; a braced skid pose with
+  feet planted; turning uses ω 55 while moving (about 4 frames) and 26 when idle.
+
 ### Ideas after v1
 
 Tera (once per match), switch-in resist rewards, abilities, items (Choice Band, Leftovers, Life Orb,

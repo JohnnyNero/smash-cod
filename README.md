@@ -48,6 +48,10 @@ working branch also deploys to GitHub Pages.
 - **Ledges:** fall near the edge to grab it. Then **up** climbs, **jump** jumps, **attack** does a
   getup attack, **shield** rolls in, and **down** lets go.
 - **Tech:** tap shield just before you slam into the ground to recover instantly.
+- **Movement:** flick the stick to dash (faster than running); flick back during the dash to
+  dash-dance, or right at its end to pivot. Let go of a run to skid. Press jump and attack
+  together for a short-hop aerial. Presses made during lag are remembered for 7 frames, so
+  inputs come out on the first frame you can act.
 - **PP:** each special has limited uses per stock, shown on both players' HUD. At 0 PP the move
   becomes **Struggle**: weak, typeless, and a little self-damage. Up-special still gets you back to
   the stage.
