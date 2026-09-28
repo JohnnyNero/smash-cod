@@ -55,6 +55,21 @@ function toonGradient() {
 }
 const outlineMat = new THREE.MeshBasicMaterial({ color: 0x14121c, side: THREE.BackSide });
 
+// Cel rim light: a crisp warm band along the silhouette (the sunset behind the stadium),
+// which separates the characters from the background.
+function addRim(m) {
+  m.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `
+      {
+        float rim = 1.0 - max(dot(normal, normalize(vViewPosition)), 0.0);
+        float band = smoothstep(0.7, 0.76, rim) * (0.35 + 0.65 * max(normal.y, 0.0));
+        outgoingLight += vec3(1.0, 0.78, 0.55) * band * 0.2;
+      }
+      #include <opaque_fragment>`);
+  };
+  m.customProgramCacheKey = () => 'toonRim';
+}
+
 // A small spring for secondary motion (tails, ears, wings lagging behind the body).
 class Spring {
   constructor(k = 140, c = 11) { this.k = k; this.c = c; this.x = 0; this.v = 0; }
@@ -120,6 +135,7 @@ export class CreatureModel {
     this.eyes = [];
     this.body.traverse((o) => { if (o.userData.eye) this.eyes.push(o); });
     if (STYLE === 'toon') this.addOutlines();
+    this.feet = ['legL', 'legR'].map((n) => this.makeAnkle(this.j[n])).filter(Boolean);
     this.springs = { tail: new Spring(120, 9), tailZ: new Spring(90, 8), ear: new Spring(160, 10), bob: new Spring(200, 16) };
     this.prevV = { x: 0, y: 0 };
     this.blinkT = 2 + Math.random() * 3;
@@ -166,6 +182,7 @@ export class CreatureModel {
         color, roughness: o.r ?? 0.7, metalness: o.m ?? 0.05, flatShading: true,
         emissive: o.e ?? 0x000000, emissiveIntensity: o.ei ?? 1,
       });
+    if (STYLE === 'toon') addRim(m);
     m.userData.baseEmissive = m.emissive.clone();
     m.userData.baseIntensity = m.emissiveIntensity;
     this.mats.push(m);
@@ -188,6 +205,27 @@ export class CreatureModel {
       hull.userData.outline = true;
       m.add(hull);
     }
+  }
+
+  // Gather the lowest parts of a leg (foot and toes) under an ankle pivot, so feet can stay
+  // flat on the ground while the leg swings.
+  makeAnkle(leg) {
+    if (!leg) return null;
+    const parts = leg.children.filter((c) => c.isMesh);
+    if (parts.length < 2) return null;
+    const minY = Math.min(...parts.map((c) => c.position.y));
+    const foot = parts.filter((c) => c.position.y <= minY + 0.04);
+    if (foot.length === parts.length) return null;
+    const ankle = new THREE.Group();
+    ankle.position.set(0, minY, 0);
+    leg.add(ankle);
+    for (const f of foot) {
+      leg.remove(f);
+      f.position.y -= minY;
+      ankle.add(f);
+    }
+    ankle.userData.leg = leg;
+    return ankle;
   }
 
   // Poké Ball entrance: grow in from a white flash. Recall: shrink away in a red flash.
@@ -243,7 +281,11 @@ export class CreatureModel {
     const run = Math.min(1, speed / (v.runSpeed || 8));
     pv.gait = damp(pv.gait, grounded && v.state === 'ground' ? run : 0, 9, dt);
     const gait = pv.gait;
-    if (grounded) this.phase += (speed * dt) / (this.h * 0.55);
+    if (grounded) {
+      const before = Math.floor(this.phase / Math.PI);
+      this.phase += (speed * dt) / (this.h * 0.55);
+      if (Math.floor(this.phase / Math.PI) !== before && pv.gait > 0.45) this.footstep = true; // a foot plants
+    }
     // Lean into acceleration, rock back when braking or turning around.
     const skid = v.state === 'ground' && v.vx * v.facing < -0.5 ? 1 : 0;
     pv.lean = damp(pv.lean, grounded ? Math.max(-0.35, Math.min(0.35, fwdAcc * 0.012)) - skid * 0.3 : 0, 8, dt);
@@ -273,6 +315,19 @@ export class CreatureModel {
       o.earL.x = o.earR.x = -0.55 * gait;
       o.tail.x = -0.35 * gait;
       // Two bounces per stride: highest mid-stride, lowest as the legs pass.
+      if (this.parts.allFours) {
+        // Pikachu drops onto all fours at speed: body pitched forward, arms become front legs
+        // in a bounding gait, head held up to look ahead.
+        const q = Math.max(0, (gait - 0.55) / 0.45) ** 1.5;
+        o.torso.x += 0.95 * q;
+        o.head.x += -0.85 * q;
+        o.armL.x = o.armL.x * (1 - q) + q * (-1.1 + Math.sin(ph + 0.6) * 0.9);
+        o.armR.x = o.armR.x * (1 - q) + q * (-1.1 + Math.sin(ph + 0.9) * 0.9);
+        o.legL.x = o.legL.x * (1 - q) + q * (0.35 + Math.sin(ph + Math.PI) * 0.8);
+        o.legR.x = o.legR.x * (1 - q) + q * (0.35 + Math.sin(ph + Math.PI + 0.3) * 0.8);
+        o.tail.x -= 1.2 * q; // counter the body pitch so the tail streams out behind
+        o.torso.y *= 1 - q;
+      }
       bodyY = (1 - Math.abs(c)) * 0.075 * gait - 0.02 * gait;
       stretch = (1 - Math.abs(c)) * 0.04 * gait - 0.02 * gait;
       const idle = 1 - Math.min(1, gait * 3);
@@ -761,6 +816,14 @@ export class CreatureModel {
       }
       const r = this.rest[name];
       jo.rotation.set(r.x + c.x, r.y + c.y, r.z + c.z);
+    }
+    // Feet stay flat on the ground while grounded (ankles counter the leg swing); in the air
+    // they point their toes a little.
+    const plant = grounded ? 0.85 : 0;
+    for (const ankle of this.feet) {
+      const leg = ankle.userData.leg;
+      const swing = this.cur[leg === this.j.legL ? 'legL' : 'legR'].x;
+      ankle.rotation.x = damp(ankle.rotation.x, -swing * plant + (grounded ? 0 : 0.35), 30, dt);
     }
     pv.bodyY = damp(pv.bodyY, bodyY, atk ? 30 : 20, dt);
     pv.lunge = damp(pv.lunge, lunge * this.h, atk ? 35 : 12, dt);

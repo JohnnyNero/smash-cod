@@ -176,6 +176,21 @@ This is the source of truth for decisions. Update it when a decision changes.
   (anticipation) → a snap in the last few frames before the first active frame → hold → eased
   recovery, plus a body lunge and a follow-through swell. Victims shake during hitstop.
 
+## Polish pass 2: movement & models
+
+- **Movement feel:** a hard flick bursts into an initial dash (so you can dash-dance), skid dust
+  when reversing out of a run, footstep puffs as feet plant, landing puffs scaled to impact, and a
+  star glint when you fast-fall. Dust is soft and round rather than faceted.
+- **Feet:** legs get an ankle pivot (built automatically from the lowest parts of each leg) that
+  keeps feet flat on the ground through the stride and points the toes in the air.
+- **Pikachu** drops onto all fours at full speed, with a bounding gait and the tail streaming out
+  behind.
+- **Models:** smoother silhouettes (big parts get more segments), capsule limbs, a crisp warm cel
+  rim light along the silhouette (toon style). Lucario is rebuilt: black-furred thighs and waist,
+  digitigrade blue shins, cream chest fur with tufts, black muzzle and mask, cheek fur, black paws
+  with steel spikes, a bushy tail. Charizard gets shoulders and clawed hands; Venusaur gets haunches,
+  capsule legs with toes and frond-shaped leaves.
+
 ### Ideas after v1
 
 Tera (once per match), switch-in resist rewards, abilities, items (Choice Band, Leftovers, Life Orb,

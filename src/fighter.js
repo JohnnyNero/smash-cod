@@ -248,6 +248,20 @@ export class Fighter {
       return;
     }
     const sx = this.sx;
+    const fx = this.game.effects;
+    // Initial dash: a hard flick bursts straight to near full speed (and lets you dash-dance).
+    if (this.flickT === 0 && Math.abs(this.flickX) > 0.8 && Math.abs(this.flickX) >= Math.abs(this.flickY)) {
+      const dir = Math.sign(this.flickX);
+      if (this.vel.x * dir < this.st.runSpeed * 0.6) {
+        this.vel.x = dir * this.st.runSpeed * 0.9;
+        fx.puff(this.pos.x - dir * this.w * 0.3, this.pos.y, -dir, 5);
+        this.game.audio.dash(this.pos.x);
+      }
+    }
+    // Skidding: reversing out of a run kicks up dust as the feet dig in.
+    if (sx && Math.sign(sx) !== Math.sign(this.vel.x) && Math.abs(this.vel.x) > this.st.runSpeed * 0.5 && Math.round(this.t * 60) % 4 === 0) {
+      fx.puff(this.pos.x, this.pos.y, Math.sign(this.vel.x), 2);
+    }
     if (sx) this.facing = Math.sign(sx);
     const speed = Math.abs(sx) > 0.6 ? this.st.runSpeed : this.st.runSpeed * 0.45;
     const rate = sx && Math.sign(sx) === Math.sign(this.vel.x || sx) ? PHYS.groundAccel : PHYS.groundFriction + PHYS.groundAccel * 0.5;
@@ -327,7 +341,10 @@ export class Fighter {
         this.vel.x = approach(this.vel.x, target, PHYS.airAccel * DT);
       }
     }
-    if (this.flickT === 0 && this.flickY < -0.7 && this.vel.y < 3) this.fastFall = true;
+    if (this.flickT === 0 && this.flickY < -0.7 && this.vel.y < 3 && !this.fastFall) {
+      this.fastFall = true;
+      this.game.effects.glint(this.pos.x, this.pos.y + this.h * 0.5); // Smash's fast-fall sparkle
+    }
   }
 
   leaveGround() {
@@ -922,6 +939,10 @@ export class Fighter {
     this.tumble = false;
     this.landSquash = clamp(impact / 22, 0.15, 1);
     if (impact > 12) this.game.effects.dust(this.pos.x, this.pos.y, 6);
+    else if (impact > 5) {
+      this.game.effects.puff(this.pos.x - 0.15, this.pos.y, -1, 2);
+      this.game.effects.puff(this.pos.x + 0.15, this.pos.y, 1, 2);
+    }
     this.game.audio.land(this.pos.x, impact > 20);
   }
 

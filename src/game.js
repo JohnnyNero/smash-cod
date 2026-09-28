@@ -1379,6 +1379,10 @@ export class Game {
         const [x, y] = lerpPos(f.px, f.py, f.pos.x, f.pos.y);
         m.root.position.set(x, y, 0);
         m.update(this.fighterView(f), dt);
+        if (m.footstep) {
+          m.footstep = false;
+          this.effects.puff(x - f.facing * 0.1, y, -f.facing, 1);
+        }
         if (f.state === 'sleep' && dt > 0 && Math.random() < 0.06) {
           this.effects.add(0, f.pos.x + f.facing * 0.3, f.pos.y + f.h * 0.5, 0, 0.4, 1.2, 0, 1.2, 0.12, 0xd8d0ff, { drag: 0.5 });
         }
