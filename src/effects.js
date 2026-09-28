@@ -57,7 +57,7 @@ export class Effects {
     };
 
     this.lights = [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 2; i++) {
       const l = new THREE.PointLight(0xffaa55, 0, 12, 1.6);
       l.userData = { life: 0, max: 1, peak: 0 };
       scene.add(l);

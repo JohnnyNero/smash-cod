@@ -158,6 +158,24 @@ This is the source of truth for decisions. Update it when a decision changes.
   Pokémon away.
 - **Victory pose:** the winner cheers on the results screen, framed by the camera.
 
+## Feel pass: performance & fluid animation
+
+- **Performance:** the stadium's ~450 static stand/tower/banner meshes are baked into one mesh per
+  material (draw calls ~520 → ~280); fewer flash point lights; pixel ratio capped at 1.75.
+  Dynamic resolution drops the render scale (then bloom) if frames run long, with hysteresis so it
+  never see-saws. `?quality=high|low` pins the setting.
+- **Smooth motion:** the 60 Hz sim is interpolated at render time (positions and move progress), so
+  120/144 Hz screens and uneven frames stay smooth.
+- **Joints:** every joint follows its target through an underdamped spring, so poses flow into each
+  other with a little overshoot instead of snapping.
+- **Locomotion:** stride is tied to distance travelled (no foot skating), gait blends walk → run,
+  lean follows acceleration, skid lean on turnarounds, two bounces per stride, a level head, arms
+  pumping against legs; a breathing, weight-shifting ready stance at idle; air poses blend
+  continuously from rising tuck to falling spread, with squash & stretch.
+- **Attacks:** every move is timed to its real hit frames (`hitWindows` in game.js): wind-up
+  (anticipation) → a snap in the last few frames before the first active frame → hold → eased
+  recovery, plus a body lunge and a follow-through swell. Victims shake during hitstop.
+
 ### Ideas after v1
 
 Tera (once per match), switch-in resist rewards, abilities, items (Choice Band, Leftovers, Life Orb,

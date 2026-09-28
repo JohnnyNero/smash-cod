@@ -30,6 +30,20 @@ const PREVIEW_TIME = 15; // seconds to pick a lead at team preview
 // Hidden picks: ◀ / ▲ / ▶ choose team member 1 / 2 / 3 (the mapping is public, the choice is not).
 const pickFromNav = (d) => (d.nav.left ? 0 : d.nav.up ? 1 : d.nav.right ? 2 : -1);
 
+// When each move actually connects, as fractions of its length, so animations can time their
+// wind-up and strike to the real hit frames. Cached on the move.
+const CONNECT = new Set(['projectile', 'boost', 'destinybond', 'fx', 'release']);
+function hitWindows(m) {
+  if (m._hits) return m._hits;
+  const w = (m.hitboxes || []).map((h) => [h.f[0], h.f[1]]);
+  const ev = (m.events || []).filter((e) => CONNECT.has(e.do)).map((e) => e.f);
+  if (ev.length) w.push([Math.min(...ev), Math.max(...ev)]);
+  w.sort((a, b) => a[0] - b[0]);
+  if (!w.length) w.push([m.total * 0.3, m.total * 0.5]);
+  m._hits = w.map(([a, b]) => [a / m.total, Math.min(1, (b + 1) / m.total)]);
+  return m._hits;
+}
+
 function circleBox(cx, cy, r, minX, minY, maxX, maxY) {
   const nx = clamp(cx, minX, maxX);
   const ny = clamp(cy, minY, maxY);
@@ -37,6 +51,8 @@ function circleBox(cx, cy, r, minX, minY, maxX, maxY) {
 }
 
 export class Game {
+  static hitWindows = hitWindows;
+
   constructor(canvas, uiRoot, input, audio) {
     this.input = input;
     this.audio = audio;
@@ -46,7 +62,9 @@ export class Game {
     const low = this.quality === 'low';
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: !low, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, low ? 1.25 : 2));
+    this.basePixelRatio = Math.min(window.devicePixelRatio || 1, low ? 1.25 : 1.75);
+    this.fixedQuality = params.has('quality');
+    this.dyn = { scale: 1, max: 1, avg: 1 / 60, t: 0 };
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = true;
@@ -100,6 +118,7 @@ export class Game {
   resize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
+    this.renderer.setPixelRatio(Math.max(0.6, this.basePixelRatio * this.dyn.scale));
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -829,8 +848,34 @@ export class Game {
 
     this.stage.update(this.realTime, dt);
     this.updateCamera(dt);
+    this.adaptQuality(dt);
     if (this.composer) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
+  }
+
+  // Dynamic resolution: if frames run long, render fewer pixels (then drop bloom) until the
+  // game holds its frame rate; creep back up when there is headroom.
+  adaptQuality(dt) {
+    if (this.fixedQuality || dt <= 0) return;
+    const q = this.dyn;
+    q.avg += (dt - q.avg) * 0.05;
+    q.t += dt;
+    if (q.t < 1) return;
+    const slow = q.avg > 1 / 50;
+    const fast = q.avg < 1 / 57;
+    if (slow && q.scale > 0.5) {
+      q.max = q.scale - 0.05; // never climb back to a level that was too slow (no see-sawing)
+      q.scale = Math.max(0.5, q.scale - 0.15);
+      q.t = 0;
+      this.resize();
+    } else if (slow && this.composer) {
+      this.composer = null; // bloom is the next most expensive thing
+      q.t = 0;
+    } else if (fast && q.t > 10 && q.scale + 0.1 <= q.max) {
+      q.scale += 0.1;
+      q.t = 0;
+      this.resize();
+    } else if (q.t > 10) q.t = 1;
   }
 
   simulate(dt) {
@@ -863,6 +908,9 @@ export class Game {
 
   step() {
     this.time += SIM_DT;
+    // Remember where everything was so rendering can interpolate between sim steps.
+    for (const f of this.fighters) { f.px = f.pos.x; f.py = f.pos.y; }
+    for (const pr of this.projectiles) { pr.px = pr.x; pr.py = pr.y; }
     if (this.hitstop > 0) {
       this.hitstop--;
       return;
@@ -1294,7 +1342,11 @@ export class Game {
       state: f.state, sf: f.sf, grounded: f.grounded, vx: f.vel.x, vy: f.vel.y, facing: f.facing,
       runSpeed: f.st.runSpeed,
       anim: inMove ? f.move.anim : null,
-      p: inMove ? f.moveF / f.move.total : f.state === 'getup' ? f.sf / (f.getupTotal || 1) : 0,
+      hits: inMove ? hitWindows(f.move) : null,
+      // Progress is interpolated between sim steps (except while frozen) so animation is smooth.
+      p: inMove ? Math.min(1, (f.moveF + (this.hitstop > 0 || f.charging ? 0 : this.alpha || 0)) / f.move.total)
+        : f.state === 'getup' ? f.sf / (f.getupTotal || 1) : 0,
+      shake: this.hitstop > 0 && f.state === 'hitstun' ? 1 : 0,
       charging: f.charging, tumble: f.tumble, dodge: f.dodge && f.dodge.kind, intangible: f.intangible,
       shieldFrac: Math.max(0, f.shieldHP / SHIELD.hp), flash: f.flash, invuln: f.invuln > 0 || f.onRevival,
       landSquash: f.landSquash, zipDir: f.zip ? { x: f.zip.vx, y: f.zip.vy } : null,
@@ -1314,11 +1366,18 @@ export class Game {
         if (f.model.recalling) f.model.update(this.fighterView(f), dt);
       }
     }
+    // The sim runs at a fixed 60 Hz; draw fighters between their last two sim positions
+    // so motion stays smooth on 120/144 Hz screens and uneven frames.
+    const a = clamp(this.acc / SIM_DT, 0, 1);
+    this.alpha = a;
+    const lerpPos = (px, py, x, y) => (px === undefined || Math.abs(x - px) + Math.abs(y - py) > 3
+      ? [x, y] : [px + (x - px) * a, py + (y - py) * a]);
     this.fighters.forEach((f, i) => {
       const m = f.model;
       m.root.visible = f.active;
       if (f.active) {
-        m.root.position.set(f.pos.x, f.pos.y, 0);
+        const [x, y] = lerpPos(f.px, f.py, f.pos.x, f.pos.y);
+        m.root.position.set(x, y, 0);
         m.update(this.fighterView(f), dt);
         if (f.state === 'sleep' && dt > 0 && Math.random() < 0.06) {
           this.effects.add(0, f.pos.x + f.facing * 0.3, f.pos.y + f.h * 0.5, 0, 0.4, 1.2, 0, 1.2, 0.12, 0xd8d0ff, { drag: 0.5 });
@@ -1332,7 +1391,8 @@ export class Game {
       }
     });
     for (const pr of this.projectiles) {
-      pr.mesh.position.set(pr.x, pr.y, 0);
+      const [x, y] = lerpPos(pr.px, pr.py, pr.x, pr.y);
+      pr.mesh.position.set(x, y, 0);
       if (pr.p.visual === 'beam') {
         pr.mesh.rotation.set(0, 0, Math.atan2(pr.vy, pr.vx));
       } else {

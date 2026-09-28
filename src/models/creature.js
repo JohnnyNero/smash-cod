@@ -12,10 +12,31 @@ import { BUILDERS } from './species.js';
 const damp = (a, b, rate, dt) => a + (b - a) * (1 - Math.exp(-rate * dt));
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
-// 0 -> 1 -> 0 across [a, b]
-const pulse = (p, a, b) => (p <= a || p >= b ? 0 : Math.sin(((p - a) / (b - a)) * Math.PI));
 // 0 -> 1 across [a, b]
 const ramp = (p, a, b) => clamp01((p - a) / (b - a));
+const easeOutCubic = (x) => 1 - (1 - x) ** 3;
+const easeInOutSine = (x) => -(Math.cos(Math.PI * x) - 1) / 2;
+
+// Attack timing from move progress p and the first/last active fraction [A, B]:
+// a = anticipation (builds through startup, released as the strike begins),
+// s = strike (snaps to 1 in the last few frames before A, holds, eases back after B),
+// f = follow-through swell after contact. s0 is where the snap starts.
+function strikeCurve(p, A, B) {
+  A = Math.max(0.06, Math.min(0.9, A));
+  B = Math.max(A, Math.min(0.97, B));
+  const s0 = A - Math.min(A * 0.45, 0.1);
+  let a = 0;
+  let s = 0;
+  if (p < s0) a = easeOutCubic(p / s0);
+  else if (p < A) {
+    const k = (p - s0) / (A - s0);
+    a = 1 - k;
+    s = easeOutCubic(k);
+  } else if (p < B) s = 1;
+  else s = 1 - easeInOutSine(clamp01((p - B) / Math.max(0.05, (1 - B) * 0.85)));
+  const f = p >= A ? Math.sin(clamp01((p - A) / Math.max(0.05, 1 - A)) * Math.PI) : 0;
+  return { a, s, f, s0 };
+}
 
 const JOINTS = ['hips', 'torso', 'head', 'armL', 'armR', 'legL', 'legR', 'tail', 'earL', 'earR'];
 
@@ -110,7 +131,7 @@ export class CreatureModel {
       if (o) this.rest[name] = o.rotation.clone();
     }
     this.cur = {};
-    for (const name of JOINTS) this.cur[name] = { x: 0, y: 0, z: 0 };
+    for (const name of JOINTS) this.cur[name] = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };
 
     const r = Math.max(this.h, species.size.w) * 0.62;
     this.shieldMat = glowMat(colors.main, 0.35);
@@ -134,7 +155,7 @@ export class CreatureModel {
     this.phase = 0;
     this.time = 0;
     this.flashAmount = -1;
-    this.pv = { bodyY: 0, rotX: 0, rotY: 0, curl: 1 };
+    this.pv = { bodyY: 0, rotX: 0, rotY: 0, curl: 1, gait: 0, lean: 0, lunge: 0, stretch: 0, bobV: 0 };
   }
 
   // Species builders register materials through this so hit flashes reach every part.
@@ -193,220 +214,345 @@ export class CreatureModel {
     const o = {}; // joint offsets from rest pose
     for (const name of JOINTS) o[name] = { x: 0, y: 0, z: 0 };
     let bodyY = 0;
+    let lunge = 0; // body shift forward (into the attack)
     let rotX = 0;
     let rotY = 0;
     let curl = 1;
     let aura = 0;
     let auraColor = null;
     let spin = null; // spinner z target; null = settle upright
+    let stretch = 0; // squash (-) and stretch (+) along the vertical
+    const pv = this.pv;
     const p = v.p;
-    const run = Math.min(1, Math.abs(v.vx) / (v.runSpeed || 8));
-
-    // ---- secondary motion: springs driven by the body's acceleration
     const sd = Math.min(dt, 1 / 30);
+    const grounded = v.state === 'ground' || v.state === 'landlag' || v.state === 'jumpsquat';
+
+    // ---- body acceleration drives lean and the secondary-motion springs
+    let fwdAcc = 0;
+    let ay = 0;
     if (sd > 0) {
       const ax = (v.vx - this.prevV.x) / sd;
-      const ay = (v.vy - this.prevV.y) / sd;
+      ay = (v.vy - this.prevV.y) / sd;
       this.prevV.x = v.vx;
       this.prevV.y = v.vy;
-      const fwd = ax * v.facing;
-      this.springs.tail.v += (-ay * 0.004 - fwd * 0.004) * (Math.abs(ay) < 400 ? 1 : 0.3);
-      this.springs.tailZ.v += fwd * 0.003;
-      this.springs.ear.v += -ay * 0.005;
-      this.springs.bob.v += -ay * 0.0015;
+      fwdAcc = ax * v.facing;
     }
-    const tailS = this.springs.tail.step(sd, 0);
-    const tailZ = this.springs.tailZ.step(sd, 0);
-    const earS = this.springs.ear.step(sd, 0);
-    const bobS = this.springs.bob.step(sd, 0);
+
+    // ---- locomotion: the stride is tied to distance travelled so feet don't skate
+    const speed = Math.abs(v.vx);
+    const run = Math.min(1, speed / (v.runSpeed || 8));
+    pv.gait = damp(pv.gait, grounded && v.state === 'ground' ? run : 0, 9, dt);
+    const gait = pv.gait;
+    if (grounded) this.phase += (speed * dt) / (this.h * 0.55);
+    // Lean into acceleration, rock back when braking or turning around.
+    const skid = v.state === 'ground' && v.vx * v.facing < -0.5 ? 1 : 0;
+    pv.lean = damp(pv.lean, grounded ? Math.max(-0.35, Math.min(0.35, fwdAcc * 0.012)) - skid * 0.3 : 0, 8, dt);
 
     // ---- base pose from state
-    o.tail.z = Math.sin(t * 2.2) * 0.12 + tailZ;
-    o.tail.x = tailS;
-    o.earL.z = Math.sin(t * 1.7) * 0.05;
-    o.earR.z = -Math.sin(t * 1.9) * 0.05;
-    o.earL.x = o.earR.x = earS * 0.8;
-    if (v.state === 'ground' || v.state === 'landlag' || v.state === 'jumpsquat') {
-      if (run > 0.05) this.phase += dt * (6 + 11 * run);
-      const s = Math.sin(this.phase);
-      o.legL.x = s * 1.0 * run;
-      o.legR.x = -s * 1.0 * run;
-      o.armL.x = -s * 0.9 * run;
-      o.armR.x = s * 0.9 * run;
-      o.torso.x = 0.38 * run + Math.sin(t * 2.5) * 0.03;
-      o.torso.y = s * 0.18 * run; // hips and shoulders twist against each other
-      o.head.y = -s * 0.12 * run;
-      o.head.x = -0.15 * run; // keep eyes forward while leaning
-      o.earL.x += -0.5 * run;
-      o.earR.x += -0.5 * run;
-      bodyY = Math.abs(Math.cos(this.phase)) * 0.08 * run;
-      if (run < 0.05 && v.state === 'ground') {
-        // Idle: breathe, and now and then glance around.
-        bodyY = Math.sin(t * 2.4) * 0.012;
-        o.head.y = Math.sin(t * 0.45) * Math.max(0, Math.sin(t * 0.21)) * 0.45;
-        o.head.x = Math.sin(t * 0.7) * 0.05;
-        o.armL.z = 0.08 + Math.sin(t * 2.4) * 0.04;
-        o.armR.z = -0.08 - Math.sin(t * 2.4) * 0.04;
+    if (grounded) {
+      const ph = this.phase;
+      const s = Math.sin(ph);
+      const c = Math.cos(ph);
+      const amp = gait * (0.5 + 0.55 * gait);
+      // Legs swing through; the forward-swinging leg lifts a little higher.
+      o.legL.x = s * amp - Math.max(0, -c) * 0.35 * gait;
+      o.legR.x = -s * amp - Math.max(0, c) * 0.35 * gait;
+      // Arms pump against the legs, bent forward more as speed builds.
+      o.armL.x = -s * amp * 0.85 - 0.35 * gait;
+      o.armR.x = s * amp * 0.85 - 0.35 * gait;
+      o.armL.z = 0.12 * gait;
+      o.armR.z = -0.12 * gait;
+      const lean = 0.1 * gait + 0.28 * gait * gait + pv.lean;
+      o.torso.x = lean;
+      o.torso.y = s * 0.22 * gait; // shoulders twist against the hips
+      o.torso.z = c * 0.05 * gait; // weight rolls from foot to foot
+      // The head stays level and looks ahead, like a real runner.
+      o.head.x = -lean * 0.75;
+      o.head.y = -s * 0.14 * gait;
+      o.head.z = -c * 0.04 * gait;
+      o.earL.x = o.earR.x = -0.55 * gait;
+      o.tail.x = -0.35 * gait;
+      // Two bounces per stride: highest mid-stride, lowest as the legs pass.
+      bodyY = (1 - Math.abs(c)) * 0.075 * gait - 0.02 * gait;
+      stretch = (1 - Math.abs(c)) * 0.04 * gait - 0.02 * gait;
+      const idle = 1 - Math.min(1, gait * 3);
+      if (idle > 0 && v.state === 'ground') {
+        // Ready stance: knees soft, breathing, weight shifting, glancing about.
+        const br = Math.sin(t * 2.4);
+        bodyY += idle * (-0.015 + br * 0.012);
+        stretch += idle * br * 0.012;
+        o.torso.x += idle * (0.08 + br * 0.03);
+        o.torso.z += idle * Math.sin(t * 1.1) * 0.04;
+        o.head.x += idle * (-0.06 - br * 0.02);
+        o.head.y += idle * Math.sin(t * 0.45) * Math.max(0, Math.sin(t * 0.21)) * 0.5;
+        o.head.z += idle * -Math.sin(t * 1.1) * 0.05;
+        o.armL.x += idle * (-0.35 + br * 0.05);
+        o.armR.x += idle * (-0.45 - br * 0.05);
+        o.armL.z += idle * (0.12 + br * 0.04);
+        o.armR.z += idle * (-0.12 - br * 0.04);
+        o.legL.x += idle * -0.12;
+        o.legR.x += idle * 0.12;
+        o.tail.z += idle * Math.sin(t * 1.6) * 0.15;
       }
-      if (v.state !== 'ground') { bodyY -= 0.1; curl = 0.95; } // crouch before a jump / on landing
+      if (v.state === 'jumpsquat') { bodyY -= 0.1; stretch -= 0.12; o.armL.x = o.armR.x = 0.5; o.torso.x += 0.2; }
+      else if (v.state === 'landlag') { bodyY -= 0.08; o.torso.x += 0.25; o.armL.z = 0.5; o.armR.z = -0.5; }
     } else if (v.state === 'air' || v.state === 'helpless') {
-      if (v.vy > 0) {
-        o.legL.x = -0.8; o.legR.x = -0.4;
-        o.armL.x = o.armR.x = -2.2;
-      } else {
-        o.legL.x = -0.2; o.legR.x = 0.25;
-        o.armL.z = 0.7 + Math.sin(t * 10) * 0.1; o.armR.z = -0.7 - Math.sin(t * 10) * 0.1;
-      }
+      // Blend continuously from the rising tuck to the falling spread.
+      const k = Math.max(-1, Math.min(1, v.vy / 12));
+      const up = Math.max(0, k);
+      const down = Math.max(0, -k);
+      o.legL.x = -0.95 * up + 0.1 * down;
+      o.legR.x = -0.35 * up + 0.35 * down;
+      o.armL.x = -1.9 * up - 0.3 * down;
+      o.armR.x = -1.6 * up - 0.5 * down;
+      o.armL.z = 0.2 * up + 0.75 * down + Math.sin(t * 7) * 0.08 * down;
+      o.armR.z = -0.2 * up - 0.75 * down - Math.sin(t * 7 + 1) * 0.08 * down;
+      o.torso.x = 0.14 * Math.max(-1, Math.min(1, (v.vx * v.facing) / 6)) - 0.12 * up;
+      o.head.x = -0.2 * up + 0.12 * down;
+      o.tail.x = 0.4 * down - 0.3 * up;
+      o.earL.x = o.earR.x = 0.35 * up - 0.3 * down;
+      stretch = Math.min(0.14, Math.abs(v.vy) * 0.006) * (v.vy > 0 ? 1 : 0.6);
       if (v.flip >= 0) {
-        // Double jump: a quick front flip, tucked.
-        const k = 1 - (1 - v.flip) ** 3;
-        rotX = Math.PI * 2 * k;
-        curl = 1 - 0.18 * Math.sin(v.flip * Math.PI);
-        o.legL.x = o.legR.x = -1.2 * Math.sin(v.flip * Math.PI);
+        // Double jump: a quick front flip, tucked tight.
+        const kf = 1 - (1 - v.flip) ** 3;
+        rotX = Math.PI * 2 * kf;
+        const tuck = Math.sin(v.flip * Math.PI);
+        curl = 1 - 0.18 * tuck;
+        o.legL.x = o.legR.x = -1.3 * tuck;
+        o.armL.x = o.armR.x = -1.2 * tuck;
+        stretch = 0;
       }
       if (v.state === 'helpless') {
-        o.armL.x = o.armR.x = -2.8;
-        o.torso.x = -0.2;
+        o.armL.x = o.armR.x = -2.8 + Math.sin(t * 6) * 0.2;
+        o.torso.x = -0.25;
+        o.legL.x = Math.sin(t * 6) * 0.3;
+        o.legR.x = -Math.sin(t * 6) * 0.3;
       }
     } else if (v.state === 'shield') {
-      bodyY = -0.06;
-      o.armL.x = o.armR.x = -1.2;
-      o.torso.x = 0.2;
+      bodyY = -0.08;
+      stretch = -0.05;
+      o.armL.x = o.armR.x = -1.3;
+      o.armL.z = 0.35; o.armR.z = -0.35;
+      o.torso.x = 0.3;
+      o.head.x = -0.2;
+      o.legL.x = -0.3; o.legR.x = 0.3;
     } else if (v.state === 'shieldbreak') {
-      o.torso.x = -0.4 + Math.sin(t * 8) * 0.1;
-      o.head.z = Math.sin(t * 5) * 0.3;
-      o.armL.z = 0.5; o.armR.z = -0.5;
+      o.torso.x = -0.4 + Math.sin(t * 5) * 0.12;
+      o.head.z = Math.sin(t * 3.5) * 0.35;
+      o.head.x = 0.3;
+      o.armL.z = 0.6; o.armR.z = -0.6;
+      bodyY = Math.sin(t * 5) * 0.02;
     } else if (v.state === 'dodge') {
       if (v.dodge === 'roll') { curl = 0.8; spin = -v.facing * v.sf * 0.35; }
-      else if (v.dodge === 'air') { rotY = v.sf * 0.5; o.armL.x = o.armR.x = -1.5; }
-      else { o.torso.x = -0.3; bodyY = -0.05; }
+      else if (v.dodge === 'air') { rotY = v.sf * 0.5; o.armL.x = o.armR.x = -1.5; curl = 0.9; }
+      else { o.torso.x = -0.35; bodyY = -0.06; o.armL.z = 0.5; o.armR.z = -0.5; }
     } else if (v.state === 'hitstun') {
-      // Whip away from the hit: backwards if launched away from where we face.
+      // Whip away from the hit, limbs trailing behind the launch.
       const back = v.vx * v.facing < 0 ? 1 : -0.6;
-      o.torso.x = -0.5 * back - v.flash * 0.3 * back;
-      o.head.x = -0.5 * back * v.flash;
-      o.armL.x = -2.5 + Math.sin(t * 20) * 0.5;
-      o.armR.x = -2.5 + Math.cos(t * 20) * 0.5;
-      o.legL.x = Math.sin(t * 18) * 0.6;
-      o.legR.x = -Math.sin(t * 18) * 0.6;
+      o.torso.x = -0.55 * back - v.flash * 0.35 * back;
+      o.head.x = -0.45 * back - v.flash * 0.3;
+      o.armL.x = -2.3 + Math.sin(t * 9) * 0.35;
+      o.armR.x = -2.5 + Math.cos(t * 8) * 0.35;
+      o.armL.z = 0.5; o.armR.z = -0.5;
+      o.legL.x = 0.4 + Math.sin(t * 7) * 0.35;
+      o.legR.x = -0.2 - Math.sin(t * 7) * 0.35;
+      o.tail.x = 0.8 * back;
+      stretch = v.flash * 0.1;
     } else if (v.state === 'ledge') {
       o.armL.x = o.armR.x = -3.0;
-      o.legL.x = Math.sin(t * 3) * 0.2;
-      o.legR.x = -Math.sin(t * 3) * 0.2;
+      o.legL.x = Math.sin(t * 2.5) * 0.25;
+      o.legR.x = -Math.sin(t * 2.5) * 0.25;
       o.torso.x = 0.1;
+      o.head.x = -0.3;
     } else if (v.state === 'getup') {
-      o.armL.x = o.armR.x = -2.2 * (1 - p);
-      o.legL.x = -1.0 * (1 - p);
+      const k = easeOutCubic(p);
+      o.armL.x = o.armR.x = -2.4 * (1 - k);
+      o.legL.x = -1.1 * (1 - k);
+      o.torso.x = 0.4 * Math.sin(k * Math.PI);
+      bodyY = 0.08 * Math.sin(k * Math.PI);
     } else if (v.state === 'holding') {
-      o.armL.x = o.armR.x = -1.5;
-      o.torso.x = 0.15;
+      o.armL.x = o.armR.x = -1.5 + Math.sin(t * 4) * 0.05;
+      o.torso.x = 0.2;
+      o.legL.x = -0.3; o.legR.x = 0.3;
     } else if (v.state === 'sleep') {
       rotX = -Math.PI / 2; // lying on its back
       bodyY = -this.h * 0.3 + Math.sin(t * 2) * 0.02;
+      stretch = Math.sin(t * 2) * 0.03;
       o.armL.z = 0.6; o.armR.z = -0.6;
     } else if (v.state === 'held') {
-      o.armL.x = -2.6 + Math.sin(t * 22) * 0.4;
-      o.armR.x = -2.6 + Math.cos(t * 22) * 0.4;
-      o.legL.x = Math.sin(t * 20) * 0.7;
-      o.legR.x = -Math.sin(t * 20) * 0.7;
+      o.armL.x = -2.5 + Math.sin(t * 11) * 0.35;
+      o.armR.x = -2.5 + Math.cos(t * 11) * 0.35;
+      o.legL.x = Math.sin(t * 10) * 0.6;
+      o.legR.x = -Math.sin(t * 10) * 0.6;
+      o.head.z = Math.sin(t * 6) * 0.2;
     }
 
-    // ---- attack animations (p = move progress 0..1)
+    // ---- attack animations. Each has a wind-up (a), a snap into the strike (s) timed to the
+    // move's first active frame, a hold through the active frames, and an eased recovery;
+    // f is a follow-through swell after the hit.
     if (v.state === 'attack' && v.anim) {
+      const hits = v.hits || [[0.3, 0.5]];
+      const [A, B] = hits[0];
+      const k = strikeCurve(p, A, B);
+      let a = v.charging ? 1 : k.a;
+      const s = v.charging ? 0 : k.s;
+      const f = v.charging ? 0 : k.f;
+      if (v.charging) bodyY = Math.sin(t * 55) * 0.012;
+      const sweep = (x0, x1) => x0 + (x1 - x0) * easeOutCubic(ramp(p, k.s0, B)); // spins and flips
       switch (v.anim) {
         case 'jab':
-          o.armR.x = -1.7 * pulse(p, 0.1, 0.5);
-          o.torso.y = 0.3 * pulse(p, 0.1, 0.5);
+          o.armR.x = 0.6 * a - 1.9 * s;
+          o.armL.x = -0.5 * a + 0.5 * s;
+          o.torso.y = -0.35 * a + 0.5 * s;
+          o.torso.x = 0.05 * a + 0.2 * s;
+          o.head.y = 0.2 * a - 0.25 * s;
+          o.legL.x = -0.35; o.legR.x = 0.3;
+          lunge = 0.1 * s;
           break;
         case 'ftilt':
         case 'ledgeAttack':
-          o.legR.x = -1.6 * pulse(p, 0.15, 0.5);
-          o.torso.x = -0.35 * pulse(p, 0.15, 0.5);
-          o.armL.x = -1 * pulse(p, 0.15, 0.5);
+          o.legR.x = 0.6 * a - 1.8 * s - 0.2 * f;
+          o.legL.x = 0.15 * s;
+          o.torso.x = 0.15 * a - 0.45 * s;
+          o.torso.y = -0.2 * a + 0.3 * s;
+          o.armL.x = 0.4 * a - 0.9 * s;
+          o.armR.x = -0.3 * a + 0.7 * s;
+          o.head.x = 0.3 * s;
+          lunge = 0.12 * s;
           break;
         case 'utilt':
-          o.tail.x = 2.2 * pulse(p, 0.1, 0.55);
-          o.torso.x = -0.35 * pulse(p, 0.1, 0.55);
+          o.tail.x = -0.6 * a + 2.5 * s + 0.3 * f;
+          o.torso.x = 0.3 * a - 0.45 * s;
+          o.armL.x = o.armR.x = 0.3 * a - 1.4 * s;
+          o.head.x = 0.15 * a - 0.45 * s;
+          bodyY = -0.07 * a + 0.05 * s;
+          stretch = -0.08 * a + 0.1 * s;
           break;
-        case 'dtilt':
-          bodyY = -0.15 * pulse(p, 0, 1);
-          o.legR.x = -1.4 * pulse(p, 0.15, 0.45);
-          o.torso.x = 0.5 * pulse(p, 0, 1);
-          o.tail.x = 1.0 * pulse(p, 0.15, 0.45);
-          break;
-        case 'dash':
-          o.torso.x = 1.0 * pulse(p, 0.1, 0.5);
-          o.armL.x = o.armR.x = 0.9 * pulse(p, 0.1, 0.5);
-          curl = 1 - 0.1 * pulse(p, 0.1, 0.5);
-          break;
-        case 'fsmash': {
-          const wind = v.charging ? 1 : pulse(p, 0, 0.3);
-          const strike = v.charging ? 0 : pulse(p, 0.28, 0.6);
-          o.torso.x = -0.5 * wind + 0.7 * strike;
-          o.armL.x = o.armR.x = 0.8 * wind - 1.8 * strike;
-          o.head.x = 0.3 * strike;
-          aura = strike;
-          if (v.charging) bodyY = Math.sin(t * 60) * 0.015;
+        case 'dtilt': {
+          const crouch = Math.max(a, s, ramp(p, 0, 0.12) * (1 - ramp(p, B, 1)));
+          bodyY = -0.16 * crouch;
+          stretch = -0.1 * crouch;
+          o.legR.x = 0.5 * a - 1.5 * s;
+          o.legL.x = -0.4 * crouch;
+          o.torso.x = 0.55 * crouch;
+          o.head.x = -0.45 * crouch;
+          o.tail.x = 1.1 * s;
+          o.armL.x = o.armR.x = -0.6 * crouch;
+          lunge = 0.12 * s;
           break;
         }
+        case 'dash':
+          o.torso.x = 0.25 * a + 1.0 * s;
+          o.head.x = -0.2 * a - 0.7 * s;
+          o.armL.x = o.armR.x = -0.5 * a + 1.0 * s;
+          o.legL.x = -0.3 * s; o.legR.x = 0.8 * s;
+          curl = 1 - 0.08 * s;
+          lunge = 0.18 * s;
+          stretch = 0.08 * s;
+          break;
+        case 'fsmash':
+          o.torso.x = -0.45 * a + 0.75 * s;
+          o.torso.y = -0.5 * a + 0.45 * s;
+          o.armL.x = o.armR.x = 1.1 * a - 2.1 * s;
+          o.head.x = -0.25 * a + 0.35 * s;
+          o.legL.x = 0.1 * a - 0.6 * s;
+          o.legR.x = 0.35 * a + 0.55 * s;
+          o.tail.x = 0.6 * a - 0.4 * s;
+          bodyY += -0.07 * a;
+          stretch = -0.07 * a + 0.05 * s;
+          lunge = -0.12 * a + 0.28 * s;
+          aura = s;
+          break;
         case 'usmash':
-          rotX = v.charging ? 0.3 : -Math.PI * 2 * ramp(p, 0.2, 0.45);
-          o.tail.x = 1.5 * pulse(p, 0.2, 0.5);
-          curl = 1 - 0.15 * pulse(p, 0.2, 0.45);
-          if (v.charging) bodyY = Math.sin(t * 60) * 0.015 - 0.05;
+          bodyY += -0.12 * a + 0.3 * s;
+          stretch = -0.12 * a + 0.12 * s;
+          rotX = v.charging ? 0.25 : -Math.PI * 2 * easeOutCubic(ramp(p, k.s0, B + (1 - B) * 0.3));
+          o.tail.x = 1.6 * s;
+          o.armL.x = o.armR.x = 0.6 * a - 2.4 * s;
+          curl = 1 - 0.15 * s - 0.08 * a;
           break;
         case 'dsmash':
-          rotY = v.charging ? 0 : Math.PI * 4 * ramp(p, 0.18, 0.32);
-          curl = v.charging ? 0.9 : 1 - 0.25 * pulse(p, 0.15, 0.4);
-          aura = pulse(p, 0.18, 0.32);
-          if (v.charging) bodyY = Math.sin(t * 60) * 0.015 - 0.08;
+          rotY = v.charging ? 0 : sweep(0, Math.PI * 4);
+          curl = 1 - 0.12 * a - 0.18 * s;
+          bodyY += -0.1 * a - 0.04 * s;
+          o.legL.x = -0.8 * s; o.legR.x = 0.8 * s;
+          o.armL.z = 0.3 * a + 1.2 * s; o.armR.z = -0.3 * a - 1.2 * s;
+          aura = s * (1 - ramp(p, B, 1));
           break;
         case 'nair':
-          curl = 1 - 0.25 * pulse(p, 0.05, 0.6);
-          aura = pulse(p, 0.08, 0.55);
-          rotX = -Math.PI * 2 * ramp(p, 0.05, 0.55);
+          curl = 1 - 0.1 * a - 0.2 * s;
+          aura = s * (1 - ramp(p, B, 1));
+          rotX = -sweep(0, Math.PI * 2);
+          o.armL.z = 1.2 * s; o.armR.z = -1.2 * s;
+          o.legL.x = -0.6 * a; o.legR.x = -0.6 * a;
           break;
         case 'fair':
-          rotX = Math.PI * 4 * ramp(p, 0.15, 0.35);
-          curl = 1 - 0.25 * pulse(p, 0.1, 0.4);
+          rotX = sweep(0, Math.PI * 2);
+          curl = 1 - 0.12 * a - 0.2 * s;
+          o.armL.x = o.armR.x = -2.2 * a + 0.8 * s;
+          o.tail.x = -0.8 * a + 1.2 * s;
           break;
         case 'bair':
-          o.legL.x = o.legR.x = 1.4 * pulse(p, 0.12, 0.45);
-          o.torso.x = 0.4 * pulse(p, 0.12, 0.45);
+          o.legL.x = o.legR.x = -0.6 * a + 1.6 * s + 0.2 * f;
+          o.torso.x = -0.25 * a + 0.55 * s;
+          o.head.y = 0.5 * s;
+          o.head.x = -0.3 * s;
+          o.armL.x = o.armR.x = -0.4 * a - 1.0 * s;
+          o.tail.x = 1.4 * s;
+          lunge = -0.15 * s;
           break;
         case 'uair':
-          o.tail.x = 2.6 * pulse(p, 0.12, 0.45);
-          rotX = -0.8 * pulse(p, 0.1, 0.5);
+          o.tail.x = -0.6 * a + 2.7 * s;
+          rotX = 0.35 * a - 0.9 * s;
+          o.armL.x = o.armR.x = 0.4 * a - 2.4 * s;
+          o.head.x = -0.5 * s;
+          o.legL.x = o.legR.x = -0.6 * a + 0.3 * s;
           break;
         case 'dair':
-          rotY = Math.PI * 6 * ramp(p, 0.2, 0.45);
-          o.armL.x = o.armR.x = -3;
-          o.legL.x = o.legR.x = 0;
-          aura = pulse(p, 0.2, 0.45);
+          rotY = sweep(0, Math.PI * 6);
+          o.armL.x = o.armR.x = -1.5 * a - 3 * s;
+          o.legL.x = o.legR.x = -1.0 * a;
+          curl = 1 - 0.15 * a;
+          stretch = 0.12 * s;
+          aura = s * (1 - ramp(p, B, 1));
           break;
         case 'grab':
-          o.armL.x = o.armR.x = -1.6 * pulse(p, 0.1, 0.6);
-          o.torso.x = 0.3 * pulse(p, 0.1, 0.6);
+          o.armL.x = o.armR.x = 0.3 * a - 1.7 * s;
+          o.armL.z = 0.2 * a; o.armR.z = -0.2 * a;
+          o.torso.x = -0.1 * a + 0.4 * s;
+          o.head.x = -0.3 * s;
+          lunge = 0.15 * s;
           break;
         case 'throwF':
-          o.armL.x = o.armR.x = -1.5 - 1.2 * ramp(p, 0.3, 0.5);
+          o.armL.x = o.armR.x = -1.5 + 0.7 * a - 1.4 * s;
+          o.torso.x = -0.3 * a + 0.45 * s;
+          o.torso.y = -0.3 * a + 0.3 * s;
+          lunge = 0.15 * s;
           break;
         case 'throwB':
-          rotY = Math.PI * ramp(p, 0.1, 0.55);
-          o.armL.x = o.armR.x = -1.5;
+          rotY = Math.PI * easeInOutSine(ramp(p, 0.05, B));
+          o.armL.x = o.armR.x = -1.5 - 0.6 * s;
+          o.torso.x = -0.2 * s;
           break;
         case 'throwU':
-          o.armL.x = o.armR.x = -1.5 - 1.5 * ramp(p, 0.1, 0.5);
-          bodyY = 0.1 * pulse(p, 0.3, 0.7);
+          o.armL.x = o.armR.x = -1.3 + 0.4 * a - 1.7 * s;
+          bodyY = -0.1 * a + 0.12 * s;
+          stretch = -0.1 * a + 0.12 * s;
+          o.head.x = -0.4 * s;
           break;
         case 'throwD':
-          bodyY = 0.35 * pulse(p, 0.05, 0.45);
+          bodyY = 0.4 * Math.sin(Math.PI * ramp(p, 0.05, A)) - 0.06 * s;
           o.armL.x = o.armR.x = -2.2;
+          stretch = -0.12 * s;
           break;
         case 'cast':
-          o.torso.x = -0.25 * pulse(p, 0, 0.35) + 0.35 * pulse(p, 0.3, 0.7);
-          o.armL.x = o.armR.x = -1.3 * pulse(p, 0.25, 0.8);
-          aura = 0.6 * pulse(p, 0.2, 0.5);
+          o.torso.x = -0.3 * a + 0.35 * s;
+          o.torso.y = -0.2 * a + 0.1 * s;
+          o.armL.x = o.armR.x = 0.6 * a - 1.5 * s;
+          o.head.x = -0.2 * a + 0.1 * s;
+          o.legL.x = -0.3 * s; o.legR.x = 0.3 * s;
+          lunge = -0.05 * a + 0.08 * s;
+          aura = 0.3 * a + 0.5 * s * (1 - ramp(p, B, 1));
           break;
         case 'ball':
           curl = 0.7;
@@ -416,51 +562,67 @@ export class CreatureModel {
         case 'zip':
           curl = 0.85;
           aura = 0.5;
+          stretch = 0.12;
           // Lie along the direction of travel: head leads, upright when zipping straight up.
           if (v.zipDir) spin = (Math.atan2(v.zipDir.y, Math.abs(v.zipDir.x)) - Math.PI / 2) * (v.facing > 0 ? 1 : -1);
           o.armL.x = o.armR.x = 1.2;
           o.legL.x = o.legR.x = 1.2;
           break;
         case 'tailslam':
-          rotX = Math.PI * 2 * ramp(p, 0.1, 0.38);
-          o.tail.x = 1.8 * pulse(p, 0.15, 0.45);
+          rotX = sweep(0, Math.PI * 2);
+          o.tail.x = -0.5 * a + 1.9 * s;
+          curl = 1 - 0.1 * a;
+          bodyY = -0.06 * a + 0.2 * Math.sin(Math.PI * ramp(p, k.s0, B));
           break;
         case 'tailspike':
-          rotY = Math.PI * 4 * ramp(p, 0.15, 0.5);
-          o.tail.x = 2.8;
-          o.armL.x = o.armR.x = -2.5;
+          rotY = sweep(0, Math.PI * 4);
+          o.tail.x = 1.2 + 1.6 * s;
+          o.armL.x = o.armR.x = -1.2 * a - 2.5 * s;
+          stretch = 0.12 * s;
           break;
         case 'breath': // Flamethrower
-          o.torso.x = 0.25 * pulse(p, 0.15, 0.85);
-          o.head.x = 0.35 * pulse(p, 0.15, 0.85);
-          o.armL.x = o.armR.x = -0.8 * pulse(p, 0.1, 0.85);
-          aura = 0.4 * pulse(p, 0.2, 0.8);
+          o.torso.x = -0.3 * a + 0.3 * s;
+          o.head.x = -0.5 * a + 0.4 * s + Math.sin(t * 20) * 0.03 * s;
+          o.armL.x = o.armR.x = 0.3 * a - 0.8 * s;
+          lunge = -0.06 * a + 0.06 * s;
+          aura = 0.4 * s;
           auraColor = 0xff6a20;
           break;
         case 'blitz': // Flare Blitz
-          curl = 0.8;
+          curl = 0.8 + 0.1 * a;
           aura = 1;
           auraColor = 0xff5a10;
-          o.torso.x = 0.9;
-          o.armL.x = o.armR.x = 0.9;
+          o.torso.x = -0.3 * a + 1.0 * s;
+          o.armL.x = o.armR.x = 0.9 * s - 0.5 * a;
+          lunge = 0.2 * s;
+          stretch = 0.1 * s;
           break;
         case 'fly':
           if (v.zipDir) spin = (Math.atan2(v.zipDir.y, Math.abs(v.zipDir.x)) - Math.PI / 2) * (v.facing > 0 ? 1 : -1) * 0.6;
           o.armL.x = o.armR.x = -2.8;
           o.legL.x = o.legR.x = 0.6;
+          stretch = 0.1;
           break;
-        case 'claw': // Dragon Claw: two slashes
-          o.armR.x = -2.6 + 3.2 * ramp(p, 0.18, 0.32);
-          o.armL.x = -2.6 + 3.2 * ramp(p, 0.42, 0.55);
-          o.torso.y = 0.4 * pulse(p, 0.15, 0.35) - 0.4 * pulse(p, 0.4, 0.6);
-          aura = pulse(p, 0.4, 0.6) * 0.7;
+        case 'claw': { // Dragon Claw: two slashes
+          const k2 = hits[1] ? strikeCurve(p, hits[1][0], hits[1][1]) : k;
+          const second = p >= k2.s0 ? 1 : 0;
+          o.armR.x = -2.6 * a + 3.0 * s * (1 - second) + 0.4 * second;
+          o.armL.x = -2.4 * Math.max(a, second * k2.a) + 3.0 * k2.s * second;
+          o.torso.y = -0.35 * a + 0.45 * s * (1 - second) - 0.45 * k2.s * second;
+          o.torso.x = 0.3 * Math.max(s, k2.s);
+          lunge = 0.1 * Math.max(s, k2.s);
+          aura = 0.7 * k2.s * second;
           auraColor = 0x7a4aff;
           break;
+        }
         case 'cannon': // Hydro Pump / Ice Beam
-          o.torso.x = -0.15 - 0.1 * pulse(p, 0.25, 0.7);
-          bodyY = -0.05 * pulse(p, 0.2, 0.7);
+          o.torso.x = 0.2 * a - 0.2 * s;
+          bodyY = -0.06 * a - 0.04 * s;
+          stretch = -0.08 * a;
           o.armL.z = 0.4; o.armR.z = -0.4;
-          aura = 0.5 * pulse(p, 0.2, 0.7);
+          o.head.x = 0.2 * a;
+          lunge = -0.1 * s;
+          aura = 0.5 * s;
           auraColor = 0x5ab0ff;
           break;
         case 'shellspin': // Rapid Spin
@@ -468,63 +630,105 @@ export class CreatureModel {
           rotY = t * 30;
           o.armL.x = o.armR.x = 0.5;
           break;
-        case 'setup': // Swords Dance, Shell Smash, Destiny Bond
-          o.armL.x = o.armR.x = -2.8 * pulse(p, 0.1, 0.9);
-          o.head.x = -0.3 * pulse(p, 0.1, 0.9);
-          rotY = Math.PI * 2 * ramp(p, 0.3, 0.7);
-          aura = pulse(p, 0.3, 0.9);
-          auraColor = v.anim === 'setup' && v.bond ? 0x9a4aff : 0xff6a4a;
+        case 'setup': { // Swords Dance, Shell Smash, Destiny Bond
+          const e = easeInOutSine(Math.sin(Math.PI * ramp(p, 0.05, 0.95)));
+          o.armL.x = o.armR.x = -2.8 * e;
+          o.head.x = -0.3 * e;
+          rotY = Math.PI * 2 * easeInOutSine(ramp(p, 0.25, 0.7));
+          bodyY = 0.12 * e;
+          stretch = 0.08 * e;
+          aura = e;
+          auraColor = v.bond ? 0x9a4aff : 0xff6a4a;
           break;
+        }
         case 'beam': // Giga Drain
-          o.armL.x = o.armR.x = -1.3 * pulse(p, 0.2, 0.8);
-          o.torso.x = 0.25 * pulse(p, 0.2, 0.8);
-          aura = 0.6 * pulse(p, 0.25, 0.6);
+          o.armL.x = o.armR.x = 0.3 * a - 1.4 * s;
+          o.torso.x = -0.2 * a + 0.3 * s;
+          aura = 0.6 * s;
           auraColor = 0x7acc4a;
           break;
         case 'powder':
-          o.armL.z = 1.2 * pulse(p, 0.1, 0.8); o.armR.z = -1.2 * pulse(p, 0.1, 0.8);
-          o.tail.x = 0.6 * Math.sin(t * 25) * pulse(p, 0.1, 0.8);
+          o.armL.z = 1.2 * Math.max(a, s); o.armR.z = -1.2 * Math.max(a, s);
+          o.tail.x = 0.6 * Math.sin(t * 25) * s - 0.4 * a;
+          bodyY = 0.05 * Math.sin(t * 12) * s;
           break;
         case 'hypno':
-          o.armL.x = -1.5 + Math.sin(t * 14) * 0.4;
-          o.armR.x = -1.5 - Math.sin(t * 14) * 0.4;
-          o.head.x = 0.2;
-          aura = 0.5 * pulse(p, 0.25, 0.6);
+          o.armL.x = -1.5 * Math.max(a, s) + Math.sin(t * 9) * 0.4 * s;
+          o.armR.x = -1.5 * Math.max(a, s) - Math.sin(t * 9) * 0.4 * s;
+          o.head.x = 0.2 * s;
+          o.head.z = Math.sin(t * 6) * 0.15 * s;
+          aura = 0.5 * s;
           auraColor = 0xb07aff;
           break;
         case 'burst': // Sludge Wave
-          curl = 1 - 0.2 * pulse(p, 0, 0.15) + 0.25 * pulse(p, 0.15, 0.45);
-          o.armL.z = 1.4 * pulse(p, 0.15, 0.6); o.armR.z = -1.4 * pulse(p, 0.15, 0.6);
-          aura = pulse(p, 0.15, 0.45);
+          curl = 1 - 0.18 * a + 0.22 * s;
+          o.armL.z = -0.3 * a + 1.4 * s; o.armR.z = 0.3 * a - 1.4 * s;
+          o.torso.x = 0.3 * a - 0.2 * s;
+          aura = s * (1 - ramp(p, B, 1));
           auraColor = 0xb04ad0;
           break;
-        case 'flurry': // Close Combat
-          if (p < 0.55) {
-            o.armR.x = -1.7 * Math.abs(Math.sin(p * 45));
-            o.armL.x = -1.7 * Math.abs(Math.cos(p * 45));
+        case 'flurry': { // Close Combat
+          const last = hits[hits.length - 1];
+          const kl = strikeCurve(p, last[0], last[1]);
+          if (p < kl.s0) {
+            const w = Math.sin(p * 48);
+            o.armR.x = -0.3 - 1.5 * Math.max(0, w);
+            o.armL.x = -0.3 - 1.5 * Math.max(0, -w);
+            o.torso.y = 0.3 * w;
+            lunge = 0.08 * Math.abs(w);
           } else {
-            o.armR.x = -1.9 * pulse(p, 0.55, 0.75);
-            o.torso.x = 0.4 * pulse(p, 0.55, 0.75);
+            o.armR.x = 0.6 * kl.a - 2.0 * kl.s;
+            o.torso.x = 0.45 * kl.s;
+            o.torso.y = 0.45 * kl.s;
+            lunge = 0.2 * kl.s;
           }
+          o.legL.x = -0.35; o.legR.x = 0.35;
           aura = 0.5;
           auraColor = 0x4a8aff;
           break;
+        }
         default:
-          o.armR.x = -1.5 * pulse(p, 0.1, 0.5);
+          o.armR.x = 0.5 * a - 1.6 * s;
+          o.torso.y = 0.3 * s;
+          lunge = 0.08 * s;
           break;
       }
     }
 
     // ---- victory pose on the results screen
     if (v.victory) {
-      bodyY = Math.abs(Math.sin(t * 5)) * 0.35;
+      const hop = Math.abs(Math.sin(t * 5));
+      bodyY = hop * 0.35;
+      stretch = (hop - 0.5) * 0.12;
       o.armL.x = -2.9 + Math.sin(t * 10) * 0.3;
       o.armR.x = -2.9 - Math.sin(t * 10) * 0.3;
       o.head.x = -0.3;
       o.tail.x = Math.sin(t * 8) * 0.5;
+      o.legL.x = o.legR.x = -0.4 * (1 - hop);
       rotY = Math.sin(t * 2) * 0.4;
-      curl = 1 + Math.abs(Math.sin(t * 5)) * 0.05;
     }
+
+    // ---- secondary motion: tails, ears and wings lag behind the body's acceleration
+    const bob = bodyY;
+    const bobAcc = sd > 0 ? ((bob - pv.bodyY) / sd - pv.bobV) / sd : 0;
+    if (sd > 0) {
+      pv.bobV = (bob - pv.bodyY) / sd;
+      const jolt = -ay - bobAcc * 3;
+      this.springs.tail.v += (jolt * 0.004 - fwdAcc * 0.004) * (Math.abs(ay) < 400 ? 1 : 0.3);
+      this.springs.tailZ.v += fwdAcc * 0.003;
+      this.springs.ear.v += jolt * 0.005;
+      this.springs.bob.v += -ay * 0.0015;
+    }
+    const tailS = this.springs.tail.step(sd, 0);
+    const tailZ = this.springs.tailZ.step(sd, 0);
+    const earS = this.springs.ear.step(sd, 0);
+    const bobS = this.springs.bob.step(sd, 0);
+    o.tail.z += Math.sin(t * 2.2) * 0.12 + tailZ;
+    o.tail.x += tailS;
+    o.earL.z += Math.sin(t * 1.7) * 0.05;
+    o.earR.z += -Math.sin(t * 1.9) * 0.05;
+    o.earL.x += earS * 0.8;
+    o.earR.x += earS * 0.8;
 
     // ---- tumble and zip spin around the body centre
     if (v.tumble && (v.state === 'hitstun' || v.state === 'air')) {
@@ -533,40 +737,66 @@ export class CreatureModel {
     if (spin !== null) this.spinner.rotation.z = spin;
     else this.spinner.rotation.z = damp(wrap(this.spinner.rotation.z), 0, 14, dt);
 
-    // ---- apply
-    const rate = v.state === 'attack' ? 40 : 18;
+    // ---- apply: joints follow their targets through slightly springy (underdamped) motion,
+    // so poses flow into each other with a little overshoot instead of snapping.
+    const atk = v.state === 'attack';
+    const w = atk ? 62 : v.state === 'hitstun' ? 40 : 30;
+    const zeta = atk ? 0.78 : 0.62;
+    const n = Math.max(1, Math.ceil(dt / (1 / 120)));
+    const h = dt / n;
+    const w2 = w * w;
+    const dmp = 2 * zeta * w;
     for (const name of JOINTS) {
       const jo = this.j[name];
       if (!jo) continue;
       const c = this.cur[name];
-      c.x = damp(c.x, o[name].x, rate, dt);
-      c.y = damp(c.y, o[name].y, rate, dt);
-      c.z = damp(c.z, o[name].z, rate, dt);
+      const tg = o[name];
+      for (let i = 0; i < n; i++) {
+        c.vx += (w2 * (tg.x - c.x) - dmp * c.vx) * h;
+        c.vy += (w2 * (tg.y - c.y) - dmp * c.vy) * h;
+        c.vz += (w2 * (tg.z - c.z) - dmp * c.vz) * h;
+        c.x += c.vx * h;
+        c.y += c.vy * h;
+        c.z += c.vz * h;
+      }
       const r = this.rest[name];
       jo.rotation.set(r.x + c.x, r.y + c.y, r.z + c.z);
     }
-    const pv = this.pv;
-    pv.bodyY = damp(pv.bodyY, bodyY, 20, dt);
+    pv.bodyY = damp(pv.bodyY, bodyY, atk ? 30 : 20, dt);
+    pv.lunge = damp(pv.lunge, lunge * this.h, atk ? 35 : 12, dt);
     pv.curl = damp(pv.curl, curl, 25, dt);
+    pv.stretch = damp(pv.stretch, stretch + v.landSquash * -0.22, 22, dt);
     // Flips and spins are driven directly so they complete cleanly.
-    pv.rotX = v.state === 'attack' || v.flip >= 0 || rotX === 0 ? rotX : damp(pv.rotX, rotX, 20, dt);
+    pv.rotX = atk || v.flip >= 0 || rotX === 0 ? rotX : damp(pv.rotX, rotX, 20, dt);
     pv.rotY = rotY;
     this.body.position.y = -this.h * 0.5 + pv.bodyY + bobS * 0.12;
+    this.body.position.z = pv.lunge;
     this.pivot.rotation.set(pv.rotX, pv.rotY, 0);
-    const sq = v.landSquash;
-    this.pivot.scale.set(pv.curl * (1 + sq * 0.15), pv.curl * (1 - sq * 0.22), pv.curl * (1 + sq * 0.15));
+    const st = Math.max(-0.3, Math.min(0.25, pv.stretch));
+    const side = 1 - st * 0.6; // keep volume: stretch tall and thin, squash short and wide
+    this.pivot.scale.set(pv.curl * side, pv.curl * (1 + st), pv.curl * side);
 
     const targetYaw = v.yaw ?? (v.facing > 0 ? Math.PI / 2 - 0.3 : -Math.PI / 2 + 0.3);
-    this.yaw = damp(this.yaw, targetYaw, 16, dt);
+    // Turn with a quick, slightly overshooting whip.
+    const yv = this.yawV || 0;
+    let yaw = this.yaw;
+    let yvel = yv;
+    for (let i = 0; i < n; i++) {
+      yvel += (26 * 26 * (targetYaw - yaw) - 2 * 0.7 * 26 * yvel) * h;
+      yaw += yvel * h;
+    }
+    this.yaw = yaw;
+    this.yawV = yvel;
     this.facer.rotation.y = this.yaw;
+    if (v.shake) this.root.position.x += (Math.random() - 0.5) * 0.12 * v.shake;
 
     this.auraMat.color.set(auraColor ?? this.colors.accent);
     this.aura.visible = aura > 0.02;
     this.auraMat.opacity = 0.45 * aura * (0.8 + Math.random() * 0.4);
     this.shield.visible = v.state === 'shield';
     if (this.shield.visible) {
-      const s = 0.45 + 0.55 * v.shieldFrac;
-      this.shield.scale.setScalar(s);
+      const sc = 0.45 + 0.55 * v.shieldFrac;
+      this.shield.scale.setScalar(sc);
       this.shieldMat.opacity = 0.22 + (1 - v.shieldFrac) * 0.25 + Math.sin(t * 12) * 0.03;
     }
 

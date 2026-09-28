@@ -3,7 +3,31 @@
 // builds the visuals to match them.
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { STAGE } from './config.js';
+
+// Bake static decoration into one mesh per material: hundreds of stand blocks become a
+// couple of draw calls.
+function bake(scene, meshes) {
+  const byMat = new Map();
+  for (const m of meshes) {
+    m.updateMatrixWorld(true);
+    const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+    g.applyMatrix4(m.matrixWorld);
+    for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
+    if (!byMat.has(m.material)) byMat.set(m.material, []);
+    byMat.get(m.material).push(g);
+    m.geometry.dispose();
+  }
+  for (const [mat, geos] of byMat) {
+    const merged = mesh(mergeGeometries(geos), mat, 0, 0, 0, false);
+    merged.castShadow = false;
+    merged.receiveShadow = true;
+    merged.matrixAutoUpdate = false;
+    scene.add(merged);
+    geos.forEach((g) => g.dispose());
+  }
+}
 
 function std(color, o = {}) {
   return new THREE.MeshStandardMaterial({
@@ -126,6 +150,7 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
   const S = STAGE.main;
   const width = S.right - S.left;
   const updaters = [];
+  const statics = []; // never move: merged into a few meshes at the end
   let cheer = 0;
 
   // Sky gradient dome
@@ -175,7 +200,7 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
     const h = 30 + Math.random() * 60;
     const m = mesh(new THREE.ConeGeometry(25 + Math.random() * 35, h, 5 + (i % 3)), mtnMats[i % 2], -300 + i * 40 + Math.random() * 20, h / 2 - 40, -200 - Math.random() * 110, false);
     m.rotation.y = Math.random() * 3;
-    scene.add(m);
+    statics.push(m);
   }
   const cloudMat = std(0xf3c6c6, { r: 1, e: 0x4a2a40, ei: 0.6 });
   const clouds = [];
@@ -210,7 +235,7 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
       const z = cz + Math.sin(a) * r;
       const step = mesh(new THREE.BoxGeometry(2.3, 2.4, 2.8), k % 2 ? standMat : standDark, x, y - 1.2, z, false);
       step.rotation.y = -a + Math.PI / 2;
-      scene.add(step);
+      statics.push(step);
       seats.push({ x, y: y + 0.4, z, a });
     }
   }
@@ -254,21 +279,21 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
     const r = R + tiers * 2.6 + 2;
     const x = cx + Math.cos(a) * r;
     const z = cz + Math.sin(a) * r;
-    scene.add(mesh(new THREE.BoxGeometry(0.8, 36, 0.8), towerMat, x, -8, z, false));
+    statics.push(mesh(new THREE.BoxGeometry(0.8, 36, 0.8), towerMat, x, -8, z, false));
     const panel = mesh(new THREE.BoxGeometry(5, 2.6, 0.4), towerMat, x, 10.5, z, false);
     panel.lookAt(0, 0, 0);
-    scene.add(panel);
+    statics.push(panel);
     for (let i = -1; i <= 1; i++) {
       for (const j of [-0.55, 0.55]) {
         const lamp = mesh(new THREE.BoxGeometry(1.2, 0.8, 0.1), lampMat, 0, 0, 0, false);
         panel.add(lamp);
         lamp.position.set(i * 1.5, j, 0.25);
+        statics.push(lamp);
       }
     }
   }
 
   // Team banners hanging on the front of the stands
-  const banners = [];
   const redBanner = new THREE.MeshStandardMaterial({ map: bannerTexture('#c8382f'), side: THREE.DoubleSide, roughness: 0.9 });
   const blueBanner = new THREE.MeshStandardMaterial({ map: bannerTexture('#2a62c8'), side: THREE.DoubleSide, roughness: 0.9 });
   for (let i = 0; i < 8; i++) {
@@ -277,8 +302,7 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
     const z = cz + Math.sin(a) * (R - 1.6);
     const b = mesh(new THREE.PlaneGeometry(3.6, 7, 1, 4), i < 4 ? redBanner : blueBanner, x, -20, z, false);
     b.lookAt(0, -20, 0);
-    scene.add(b);
-    banners.push(b);
+    statics.push(b);
   }
 
   // ---- The battle field (collision: STAGE.main)
@@ -295,7 +319,7 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
   scene.add(mesh(new THREE.BoxGeometry(width - 0.4, 1.8, 5.6), wallMat, 0, -1.4, 0));
   const lightMat = std(0x000000, { e: 0xffc870, ei: 3 });
   for (let x = S.left + 0.8; x <= S.right - 0.6; x += 1.6) {
-    scene.add(mesh(new THREE.BoxGeometry(0.3, 0.3, 0.06), lightMat, x, -1.2, 2.82, false));
+    statics.push(mesh(new THREE.BoxGeometry(0.3, 0.3, 0.06), lightMat, x, -1.2, 2.82, false));
   }
 
   // Floating rock under the field, held up by glowing crystals.
@@ -393,6 +417,8 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
     scene.add(g);
     return g;
   });
+
+  bake(scene, statics);
 
   return {
     drones,
