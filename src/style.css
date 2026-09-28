@@ -406,3 +406,13 @@ b { color: var(--gold); }
 .announce.matchup small { font-size: 0.5em; color: var(--gold); margin: 0 0.3em; }
 .stats { grid-template-columns: 1fr 1fr; column-gap: 12px; }
 .select .card { max-height: calc(100vh - 110px); }
+
+.pp em { font-style: normal; font-size: 9px; font-weight: 700; }
+.pp { grid-template-columns: 22px 1fr auto auto; }
+.pp em.se { color: #7ae07a; }
+.pp em.nve { color: #ff8a5a; }
+.pp em.none { color: #9aa3b5; }
+.pick-mon .mu { grid-column: 2 / -1; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; }
+.pick-mon .mu.good { color: #7ae07a; }
+.pick-mon .mu.bad { color: #ff8a5a; }
+@media (max-height: 520px) { .pp { grid-template-columns: 20px auto auto; } }

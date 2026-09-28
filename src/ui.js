@@ -3,6 +3,7 @@
 
 import { TYPE_COLORS } from './config.js';
 import { moveInfo } from './data/moveset.js';
+import { moveEffect, typeEffectiveness } from './damage.js';
 import { SPECIES } from './data/pokemon.js';
 
 const el = (tag, cls, html = '') => {
@@ -190,7 +191,7 @@ export class UI {
 
   buildCard(c, f, p) {
     const moves = Object.entries(f.moveset.specials).map(([slot, mv]) =>
-      `<div class="pp" data-slot="${slot}" style="--tc:${TYPE_COLORS[mv.type]}"><i>${SLOT_LABEL[slot]}</i><span class="pn2"></span><b></b></div>`).join('');
+      `<div class="pp" data-slot="${slot}" style="--tc:${TYPE_COLORS[mv.type]}"><i>${SLOT_LABEL[slot]}</i><span class="pn2"></span><em></em><b></b></div>`).join('');
     const strip = this.teamMode
       ? `<div class="team-strip">${p.team.map((t, k) => `<span data-k="${k}"><i>${['◀', '▲', '▶'][k]}</i>${t.sp.name}<b></b></span>`).join('')}</div>`
       : '';
@@ -248,10 +249,19 @@ export class UI {
       if (f.seed) tags.push('<span class="seed">SEEDED</span>');
       if (f.destinyBond > 0) tags.push('<span class="bond">BOND</span>');
       set('status', tags.join(''), (v) => { c.status.innerHTML = v; });
+      const foePl = players[1 - i];
+      const foe = foePl && foePl.team[foePl.active];
       for (const [slot, e] of Object.entries(c.pp)) {
         const pp = f.pp[slot];
         const mv = f.moveset.specials[slot];
         const known = !this.teamMode || f.revealed.has(slot); // Showdown: moves are secret until used
+        // Effectiveness hint against the opponent's current Pokémon: ▲ super effective, ▼ resisted, ✕ no effect.
+        const eff = known && foe && mv.cat !== 'status' ? moveEffect(mv, foe.sp) : known && foe && mv.cat === 'status' && moveEffect(mv, foe.sp) === 0 ? 0 : 1;
+        set('eff' + slot, `${known}${eff}`, () => {
+          const em = e.querySelector('em');
+          em.textContent = eff === 0 ? '✕' : eff > 1 ? '▲' : eff < 1 ? '▼' : '';
+          em.className = eff === 0 ? 'none' : eff > 1 ? 'se' : eff < 1 ? 'nve' : '';
+        });
         set('pp' + slot, `${pp}${known}`, () => {
           e.querySelector('.pn2').textContent = known ? mv.name : '???';
           e.querySelector('b').textContent = !known ? '' : pp > 0 ? `${pp}/${mv.pp}` : 'STRUGGLE';
@@ -285,13 +295,26 @@ export class UI {
   // Both use the same overlay: each player's team is shown with its public ◀ ▲ ▶ mapping;
   // choices are hidden until both lock in.
   renderPicks(title, sub, players, k, showPct) {
+    // Public-info matchup tag against the opponent's Pokémon on the field (types only).
+    const tag = (f, foe) => {
+      if (!foe) return '';
+      const off = Math.max(...f.sp.types.map((t) => typeEffectiveness(t, foe.sp.types)));
+      const def = Math.max(...foe.sp.types.map((t) => typeEffectiveness(t, f.sp.types)));
+      const score = Math.log2(Math.max(off, 0.25)) - Math.log2(Math.max(def, 0.25));
+      if (score >= 1) return '<span class="mu good">GOOD vs ' + foe.sp.name + '</span>';
+      if (score <= -1) return '<span class="mu bad">RISKY vs ' + foe.sp.name + '</span>';
+      return '';
+    };
     const cols = players.map((p, i) => {
+      const other = players[1 - i];
+      const foe = showPct && !k.needs[1 - i] ? other.team[other.active] : null;
       const mons = p.team.map((f, idx) => {
         const cls = f.eliminated ? 'fainted' : (showPct && idx === p.active && !k.needs[i]) ? 'in' : '';
         return `<button class="pick-mon ${cls}" data-action="pick" data-slot="${i}" data-row="${idx}" style="--pc:${f.colors.css}">
           <i>${['◀', '▲', '▶'][idx]}</i><span class="nm">${f.sp.name.toUpperCase()}</span>
           <span class="tp">${f.sp.types.map(typeChip).join('')}</span>
           ${showPct ? `<span class="pc">${f.eliminated ? 'FAINTED' : Math.floor(f.percent) + '%'}${cls === 'in' ? ' · IN' : ''}</span>` : ''}
+          ${!f.eliminated ? tag(f, foe) : ''}
         </button>`;
       }).join('');
       const role = !showPct ? 'Pick your lead' : k.needs[i] ? 'Pick your next Pokémon' : 'Stay in (▼ / A) or switch';

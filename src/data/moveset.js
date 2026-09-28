@@ -34,10 +34,16 @@ export function moveInfo(id) {
   return DEX.moves[id];
 }
 
+const NORMAL_NAMES = {
+  jab: 'Jab', ftilt: 'Forward Tilt', utilt: 'Up Tilt', dtilt: 'Down Tilt', dash: 'Dash Attack',
+  fsmash: 'Forward Smash', usmash: 'Up Smash', dsmash: 'Down Smash', nair: 'Neutral Air',
+  fair: 'Forward Air', bair: 'Back Air', uair: 'Up Air', dair: 'Down Air', grab: 'Grab', ledgeAttack: 'Ledge Attack',
+};
+
 export function buildMoveset(species, moves = species.moves) {
   const s = species.size.h / 1.2;
   const normals = {};
-  for (const [k, m] of Object.entries(NORMALS)) normals[k] = { id: k, ...scaleMove(m, s) };
+  for (const [k, m] of Object.entries(NORMALS)) normals[k] = { id: k, name: NORMAL_NAMES[k], ...scaleMove(m, s) };
   const specials = {};
   for (const slot of SLOTS) {
     const id = moves[slot];

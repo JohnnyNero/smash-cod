@@ -1,5 +1,6 @@
-// "Outpost": a floating military rooftop at dusk. The collision shapes are in config.js
-// (STAGE); this file only builds the visuals to match them.
+// "Plateau Stadium": a stone battle field floating over a stadium bowl at dusk, with a crowd
+// that cheers on big moments. The collision shapes are in config.js (STAGE); this file only
+// builds the visuals to match them.
 
 import * as THREE from 'three';
 import { STAGE } from './config.js';
@@ -19,52 +20,113 @@ function mesh(geo, mat, x = 0, y = 0, z = 0, shadows = true) {
   return m;
 }
 
-function stripeTexture() {
+function canvasTexture(w, h, draw) {
   const c = document.createElement('canvas');
-  c.width = 64;
-  c.height = 16;
-  const g = c.getContext('2d');
-  g.fillStyle = '#1a1a1a';
-  g.fillRect(0, 0, 64, 16);
-  g.fillStyle = '#f2b705';
-  for (let x = -16; x < 64; x += 16) {
-    g.beginPath();
-    g.moveTo(x, 16);
-    g.lineTo(x + 8, 16);
-    g.lineTo(x + 16, 0);
-    g.lineTo(x + 8, 0);
-    g.fill();
-  }
+  c.width = w;
+  c.height = h;
+  draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c);
-  t.wrapS = THREE.RepeatWrapping;
   t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
   return t;
 }
 
-function concreteTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const g = c.getContext('2d');
-  g.fillStyle = '#8b9096';
-  g.fillRect(0, 0, 128, 128);
-  for (let i = 0; i < 900; i++) {
-    const v = 120 + Math.random() * 40;
-    g.fillStyle = `rgba(${v},${v},${v + 4},0.35)`;
-    g.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
-  }
-  g.strokeStyle = 'rgba(40,40,45,0.5)';
-  g.lineWidth = 2;
-  g.strokeRect(0, 0, 128, 128);
-  const t = new THREE.CanvasTexture(c);
+// The battle field: packed earth with white court lines and a Poké Ball centre circle.
+function fieldTexture() {
+  return canvasTexture(1024, 256, (g, w, h) => {
+    g.fillStyle = '#b58a5a';
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 5000; i++) {
+      const v = 150 + Math.random() * 60;
+      g.fillStyle = `rgba(${v},${v * 0.78},${v * 0.52},0.3)`;
+      g.fillRect(Math.random() * w, Math.random() * h, 3, 3);
+    }
+    g.strokeStyle = 'rgba(255,255,255,0.9)';
+    g.lineWidth = 8;
+    g.strokeRect(24, 24, w - 48, h - 48);
+    g.beginPath();
+    g.moveTo(w / 2, 24);
+    g.lineTo(w / 2, h - 24);
+    g.stroke();
+    const r = 70;
+    g.beginPath();
+    g.arc(w / 2, h / 2, r, 0, Math.PI * 2);
+    g.fillStyle = 'rgba(255,255,255,0.85)';
+    g.fill();
+    g.beginPath();
+    g.arc(w / 2, h / 2, r, Math.PI, 0);
+    g.fillStyle = 'rgba(220,50,50,0.9)';
+    g.fill();
+    g.fillStyle = 'rgba(30,30,30,0.9)';
+    g.fillRect(w / 2 - r, h / 2 - 6, r * 2, 12);
+    g.beginPath();
+    g.arc(w / 2, h / 2, 22, 0, Math.PI * 2);
+    g.fill();
+    g.beginPath();
+    g.arc(w / 2, h / 2, 13, 0, Math.PI * 2);
+    g.fillStyle = '#fff';
+    g.fill();
+    for (const x of [w * 0.2, w * 0.8]) {
+      g.beginPath();
+      g.arc(x, h / 2, 36, 0, Math.PI * 2);
+      g.strokeStyle = 'rgba(255,255,255,0.6)';
+      g.lineWidth = 6;
+      g.stroke();
+    }
+  });
+}
+
+function stoneTexture() {
+  const t = canvasTexture(128, 64, (g, w, h) => {
+    g.fillStyle = '#8e8a84';
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(40,36,34,0.55)';
+    g.lineWidth = 3;
+    for (let row = 0; row < 2; row++) {
+      g.strokeRect(0, row * 32, w, 32);
+      for (let x = (row % 2) * 32; x < w; x += 64) g.strokeRect(x, row * 32, 64, 32);
+    }
+    for (let i = 0; i < 500; i++) {
+      const v = 110 + Math.random() * 50;
+      g.fillStyle = `rgba(${v},${v},${v - 6},0.3)`;
+      g.fillRect(Math.random() * w, Math.random() * h, 2, 2);
+    }
+  });
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.colorSpace = THREE.SRGBColorSpace;
   return t;
+}
+
+function bannerTexture(color) {
+  return canvasTexture(128, 256, (g, w, h) => {
+    g.fillStyle = color;
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = 'rgba(0,0,0,0.25)';
+    g.fillRect(0, h - 40, w, 40);
+    g.beginPath();
+    g.arc(w / 2, h * 0.42, 38, 0, Math.PI * 2);
+    g.fillStyle = '#fff';
+    g.fill();
+    g.beginPath();
+    g.arc(w / 2, h * 0.42, 38, Math.PI, 0);
+    g.fillStyle = 'rgba(0,0,0,0.25)';
+    g.fill();
+    g.fillStyle = '#222';
+    g.fillRect(w / 2 - 38, h * 0.42 - 4, 76, 8);
+    g.beginPath();
+    g.arc(w / 2, h * 0.42, 12, 0, Math.PI * 2);
+    g.fill();
+    g.beginPath();
+    g.arc(w / 2, h * 0.42, 7, 0, Math.PI * 2);
+    g.fillStyle = '#fff';
+    g.fill();
+  });
 }
 
 export function buildStage(scene, { shadowSize = 2048 } = {}) {
   const S = STAGE.main;
   const width = S.right - S.left;
   const updaters = [];
+  let cheer = 0;
 
   // Sky gradient dome
   const sky = new THREE.Mesh(
@@ -74,9 +136,9 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
       depthWrite: false,
       fog: false,
       uniforms: {
-        top: { value: new THREE.Color(0x141c44) },
-        mid: { value: new THREE.Color(0x6b3f78) },
-        horizon: { value: new THREE.Color(0xff8c4a) },
+        top: { value: new THREE.Color(0x121a44) },
+        mid: { value: new THREE.Color(0x6a3c7a) },
+        horizon: { value: new THREE.Color(0xff9450) },
       },
       vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
       fragmentShader: `
@@ -90,14 +152,12 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
     }),
   );
   scene.add(sky);
-  scene.fog = new THREE.Fog(0x8a5a7e, 70, 330);
-
-  const sun = mesh(new THREE.CircleGeometry(26, 32), new THREE.MeshBasicMaterial({ color: 0xffd08a, fog: false, toneMapped: false }), 70, 22, -420, false);
-  scene.add(sun);
+  scene.fog = new THREE.Fog(0x8a5a7e, 80, 340);
+  scene.add(mesh(new THREE.CircleGeometry(26, 32), new THREE.MeshBasicMaterial({ color: 0xffd08a, fog: false, toneMapped: false }), 70, 22, -420, false));
 
   // Lights
-  scene.add(new THREE.HemisphereLight(0xb9c6ff, 0x5a4034, 1.1));
-  const key = new THREE.DirectionalLight(0xffd6a8, 2.6);
+  scene.add(new THREE.HemisphereLight(0xb9c6ff, 0x6a4a34, 1.15));
+  const key = new THREE.DirectionalLight(0xffd6a8, 2.5);
   key.position.set(-12, 22, 14);
   key.castShadow = true;
   key.shadow.mapSize.set(shadowSize, shadowSize);
@@ -109,27 +169,20 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
   rim.position.set(8, 10, -14);
   scene.add(rim);
 
-  // Distant mountains
-  const mtnMat = std(0x3b2c52, { r: 1 });
-  const mtnMat2 = std(0x523a5e, { r: 1 });
+  // Distant mountains and drifting clouds
+  const mtnMats = [std(0x3b2c52, { r: 1 }), std(0x523a5e, { r: 1 })];
   for (let i = 0; i < 16; i++) {
     const h = 30 + Math.random() * 60;
-    const r = 25 + Math.random() * 35;
-    const m = mesh(new THREE.ConeGeometry(r, h, 5 + (i % 3)), i % 2 ? mtnMat : mtnMat2, -300 + i * 40 + Math.random() * 20, h / 2 - 40, -160 - Math.random() * 110, false);
+    const m = mesh(new THREE.ConeGeometry(25 + Math.random() * 35, h, 5 + (i % 3)), mtnMats[i % 2], -300 + i * 40 + Math.random() * 20, h / 2 - 40, -200 - Math.random() * 110, false);
     m.rotation.y = Math.random() * 3;
     scene.add(m);
   }
-
-  // Clouds
   const cloudMat = std(0xf3c6c6, { r: 1, e: 0x4a2a40, ei: 0.6 });
   const clouds = [];
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 10; i++) {
     const c = new THREE.Group();
-    for (let k = 0; k < 4; k++) {
-      const s = 3 + Math.random() * 4;
-      c.add(mesh(new THREE.IcosahedronGeometry(s, 0), cloudMat, k * 4 - 6, Math.random() * 2, Math.random() * 2, false));
-    }
-    c.position.set(-160 + Math.random() * 320, 10 + Math.random() * 35, -70 - Math.random() * 80);
+    for (let k = 0; k < 4; k++) c.add(mesh(new THREE.IcosahedronGeometry(3 + Math.random() * 4, 0), cloudMat, k * 4 - 6, Math.random() * 2, Math.random() * 2, false));
+    c.position.set(-160 + Math.random() * 320, 22 + Math.random() * 30, -110 - Math.random() * 80);
     c.userData.speed = 1 + Math.random() * 2;
     scene.add(c);
     clouds.push(c);
@@ -141,28 +194,111 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
     }
   });
 
-  // Main deck
-  const concrete = concreteTexture();
-  concrete.repeat.set(width / 2, 3);
-  const deckMat = std(0xffffff, { map: concrete });
-  scene.add(mesh(new THREE.BoxGeometry(width, 0.5, 6), deckMat, 0, -0.25, 0));
-  const stripes = stripeTexture();
-  stripes.repeat.set(width / 1.2, 1);
-  const stripeMat = std(0xffffff, { map: stripes, r: 0.6 });
-  scene.add(mesh(new THREE.BoxGeometry(width + 0.02, 0.18, 0.12), stripeMat, 0, -0.1, 3.0));
-  const sideStripe = mesh(new THREE.BoxGeometry(0.12, 0.18, 6), stripeMat, S.left, -0.1, 0);
-  scene.add(sideStripe, sideStripe.clone().translateX(width));
-  const steel = std(0x2c3138, { m: 0.6, r: 0.5 });
-  scene.add(mesh(new THREE.BoxGeometry(width - 0.6, 1.8, 5.4), steel, 0, -1.4, 0));
-  for (let x = S.left + 1; x <= S.right - 1; x += 1.9) {
-    scene.add(mesh(new THREE.BoxGeometry(0.2, 1.7, 0.2), std(0x444b55, { m: 0.5 }), x, -1.35, 2.72));
+  // ---- Stadium bowl behind the field: tiered stands, crowd, floodlights, banners
+  const standMat = std(0x5a5660, { r: 0.95 });
+  const standDark = std(0x3e3a46, { r: 0.95 });
+  const R = 60;
+  const cx = 0;
+  const cz = -8;
+  const tiers = 7;
+  const seats = [];
+  for (let a = Math.PI * 1.08; a <= Math.PI * 1.92; a += 0.045) {
+    for (let k = 0; k < tiers; k++) {
+      const r = R + k * 2.6;
+      const y = -26 + k * 2.4; // the bowl sits below the field so sky stays behind the fighters
+      const x = cx + Math.cos(a) * r;
+      const z = cz + Math.sin(a) * r;
+      const step = mesh(new THREE.BoxGeometry(2.3, 2.4, 2.8), k % 2 ? standMat : standDark, x, y - 1.2, z, false);
+      step.rotation.y = -a + Math.PI / 2;
+      scene.add(step);
+      seats.push({ x, y: y + 0.4, z, a });
+    }
   }
-  const edgeLightMat = std(0x000000, { e: 0x55f2ff, ei: 3 });
-  for (let x = S.left + 0.5; x <= S.right - 0.4; x += 1.4) {
-    scene.add(mesh(new THREE.BoxGeometry(0.28, 0.08, 0.06), edgeLightMat, x, -0.62, 2.72, false));
+  // Crowd: one instanced mesh of little fans that bounce when something big happens.
+  const fanGeo = new THREE.BoxGeometry(0.55, 0.9, 0.5);
+  const fanMat = new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true });
+  const fans = new THREE.InstancedMesh(fanGeo, fanMat, seats.length * 2);
+  const fanData = [];
+  const tmp = new THREE.Object3D();
+  const palette = [0xe8453c, 0x2d7ff0, 0xf6cf2e, 0x78c850, 0xf08030, 0xa890f0, 0xeeeeee, 0xee99ac];
+  const c3 = new THREE.Color();
+  let n = 0;
+  for (const s of seats) {
+    for (const off of [-0.55, 0.55]) {
+      const px = s.x + Math.cos(s.a + Math.PI / 2) * off;
+      const pz = s.z + Math.sin(s.a + Math.PI / 2) * off;
+      fanData.push({ x: px, y: s.y + 0.45, z: pz, phase: Math.random() * 10, rot: -s.a + Math.PI / 2 });
+      fans.setColorAt(n, c3.set(palette[Math.floor(Math.random() * palette.length)]));
+      n++;
+    }
+  }
+  fans.count = n;
+  fans.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene.add(fans);
+  updaters.push((t) => {
+    for (let i = 0; i < n; i++) {
+      const f = fanData[i];
+      const hop = Math.max(0, Math.sin(t * (6 + cheer * 6) + f.phase)) * (0.05 + cheer * 0.55);
+      tmp.position.set(f.x, f.y + hop, f.z);
+      tmp.rotation.set(0, f.rot, 0);
+      tmp.updateMatrix();
+      fans.setMatrixAt(i, tmp.matrix);
+    }
+    fans.instanceMatrix.needsUpdate = true;
+  });
+
+  // Floodlight towers along the rim
+  const towerMat = std(0x33363e, { m: 0.5 });
+  const lampMat = new THREE.MeshBasicMaterial({ color: 0xfff4d8, toneMapped: false });
+  for (const a of [Math.PI * 1.12, Math.PI * 1.35, Math.PI * 1.65, Math.PI * 1.88]) {
+    const r = R + tiers * 2.6 + 2;
+    const x = cx + Math.cos(a) * r;
+    const z = cz + Math.sin(a) * r;
+    scene.add(mesh(new THREE.BoxGeometry(0.8, 36, 0.8), towerMat, x, -8, z, false));
+    const panel = mesh(new THREE.BoxGeometry(5, 2.6, 0.4), towerMat, x, 10.5, z, false);
+    panel.lookAt(0, 0, 0);
+    scene.add(panel);
+    for (let i = -1; i <= 1; i++) {
+      for (const j of [-0.55, 0.55]) {
+        const lamp = mesh(new THREE.BoxGeometry(1.2, 0.8, 0.1), lampMat, 0, 0, 0, false);
+        panel.add(lamp);
+        lamp.position.set(i * 1.5, j, 0.25);
+      }
+    }
   }
 
-  // Floating rock under the deck, with glowing thrusters holding it up.
+  // Team banners hanging on the front of the stands
+  const banners = [];
+  const redBanner = new THREE.MeshStandardMaterial({ map: bannerTexture('#c8382f'), side: THREE.DoubleSide, roughness: 0.9 });
+  const blueBanner = new THREE.MeshStandardMaterial({ map: bannerTexture('#2a62c8'), side: THREE.DoubleSide, roughness: 0.9 });
+  for (let i = 0; i < 8; i++) {
+    const a = Math.PI * (1.18 + i * 0.09);
+    const x = cx + Math.cos(a) * (R - 1.6);
+    const z = cz + Math.sin(a) * (R - 1.6);
+    const b = mesh(new THREE.PlaneGeometry(3.6, 7, 1, 4), i < 4 ? redBanner : blueBanner, x, -20, z, false);
+    b.lookAt(0, -20, 0);
+    scene.add(b);
+    banners.push(b);
+  }
+
+  // ---- The battle field (collision: STAGE.main)
+  const field = fieldTexture();
+  const stone = stoneTexture();
+  stone.repeat.set(width / 2, 1);
+  const topMat = [std(0x8e8a84, { map: stone }), std(0x8e8a84, { map: stone }), std(0xffffff, { map: field, r: 0.95 }), std(0x6e6a64), std(0x8e8a84, { map: stone }), std(0x8e8a84, { map: stone })];
+  scene.add(mesh(new THREE.BoxGeometry(width, 0.5, 6), topMat, 0, -0.25, 0));
+  const trimMat = std(0xc9a24a, { m: 0.6, r: 0.4 });
+  scene.add(mesh(new THREE.BoxGeometry(width + 0.1, 0.14, 0.18), trimMat, 0, -0.05, 3.02));
+  const sideTrim = mesh(new THREE.BoxGeometry(0.18, 0.14, 6), trimMat, S.left, -0.05, 0);
+  scene.add(sideTrim, sideTrim.clone().translateX(width));
+  const wallMat = std(0x77726c, { map: stone });
+  scene.add(mesh(new THREE.BoxGeometry(width - 0.4, 1.8, 5.6), wallMat, 0, -1.4, 0));
+  const lightMat = std(0x000000, { e: 0xffc870, ei: 3 });
+  for (let x = S.left + 0.8; x <= S.right - 0.6; x += 1.6) {
+    scene.add(mesh(new THREE.BoxGeometry(0.3, 0.3, 0.06), lightMat, x, -1.2, 2.82, false));
+  }
+
+  // Floating rock under the field, held up by glowing crystals.
   const rockMat = std(0x5b4a44, { r: 1 });
   const rock = mesh(new THREE.CylinderGeometry(8.8, 1.2, 8, 7, 2), rockMat, 0, -6.3, 0);
   rock.scale.z = 0.42;
@@ -175,118 +311,80 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
   }
   rock.geometry.computeVertexNormals();
   scene.add(rock);
-  const thrusterGlow = new THREE.MeshBasicMaterial({ color: 0xff9a4a, toneMapped: false, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
-  const thrusterFlames = [];
-  for (const x of [-5.5, 5.5]) {
-    scene.add(mesh(new THREE.CylinderGeometry(0.9, 0.7, 1.2, 8), steel, x, -3.1, 0));
-    const f = mesh(new THREE.ConeGeometry(0.65, 3, 8), thrusterGlow, x, -5.2, 0, false);
-    f.rotation.x = Math.PI;
-    scene.add(f);
-    thrusterFlames.push(f);
-  }
-  updaters.push((t) => {
-    for (const f of thrusterFlames) f.scale.y = 0.85 + Math.sin(t * 30 + f.position.x) * 0.1 + Math.random() * 0.1;
-  });
-
-  // Background props (behind the fighting plane so they never block the view)
-  const bagMat = std(0x9b8a64, { r: 1 });
+  const crystalMat = new THREE.MeshStandardMaterial({ color: 0x9a7aff, emissive: 0x7a4aff, emissiveIntensity: 1.6, roughness: 0.2, flatShading: true });
+  const crystals = [];
   for (let i = 0; i < 9; i++) {
-    const bag = mesh(new THREE.CapsuleGeometry(0.2, 0.45, 2, 6), bagMat, -7.2 + i * 0.55 + (i > 4 ? 9.5 : 0), 0.2, -2.2);
-    bag.rotation.z = Math.PI / 2;
-    scene.add(bag);
-    if (i % 2 === 0) {
-      const top = bag.clone();
-      top.position.y = 0.55;
-      top.position.x += 0.27;
-      scene.add(top);
-    }
-  }
-  const crateMat = std(0x5e6b3e);
-  const crateTrim = std(0x3a4228);
-  for (const [x, s, y] of [[-1.8, 1.1, 0], [-0.6, 0.9, 0], [-1.3, 0.8, 1.1]]) {
-    const c = mesh(new THREE.BoxGeometry(s, s, s), crateMat, x, y + s / 2, -1.9);
-    c.rotation.y = x * 0.3;
-    c.add(mesh(new THREE.BoxGeometry(s * 1.02, s * 0.12, s * 1.02), crateTrim));
+    const c = mesh(new THREE.OctahedronGeometry(0.6 + Math.random() * 0.7, 0), crystalMat, -6 + i * 1.5 + Math.random() * 0.6, -3.4 - Math.random() * 3.2, 1.2 + Math.random() * 1.2, false);
+    c.scale.y = 1.8;
+    c.rotation.set(Math.random(), Math.random(), Math.random() * 0.4);
     scene.add(c);
+    crystals.push(c);
   }
-  const tower = new THREE.Group();
-  const towerMat = std(0x3d434c, { m: 0.5 });
-  for (const [x, z] of [[-0.35, -0.35], [0.35, -0.35], [-0.35, 0.35], [0.35, 0.35]]) {
-    tower.add(mesh(new THREE.BoxGeometry(0.08, 6, 0.08), towerMat, x, 3, z));
-  }
-  for (let y = 0.6; y < 6; y += 1) tower.add(mesh(new THREE.BoxGeometry(0.8, 0.06, 0.8), towerMat, 0, y, 0));
-  const beacon = mesh(new THREE.SphereGeometry(0.16, 8, 6), std(0x000000, { e: 0xff2a2a, ei: 4 }), 0, 6.2, 0, false);
-  tower.add(beacon);
-  tower.position.set(6.6, 0, -2.3);
-  scene.add(tower);
-  updaters.push((t) => { beacon.visible = Math.sin(t * 4) > -0.2; });
-
-  const flagPole = mesh(new THREE.CylinderGeometry(0.04, 0.04, 4, 6), towerMat, -6.4, 2, -2.4);
-  scene.add(flagPole);
-  const flagGeo = new THREE.PlaneGeometry(1.6, 0.9, 8, 1);
-  const flag = mesh(flagGeo, std(0xd8452f, { r: 0.9 }), -5.6, 3.5, -2.4);
-  flag.material.side = THREE.DoubleSide;
-  scene.add(flag);
-  const flagBase = flagGeo.attributes.position.array.slice();
   updaters.push((t) => {
-    const p = flagGeo.attributes.position;
-    for (let i = 0; i < p.count; i++) {
-      const x = flagBase[i * 3];
-      p.setZ(i, Math.sin(t * 5 + x * 3) * 0.12 * (x + 0.8));
-    }
-    p.needsUpdate = true;
+    crystalMat.emissiveIntensity = 1.4 + Math.sin(t * 1.5) * 0.3 + cheer * 1.2;
+    crystals.forEach((c, i) => { c.rotation.y += 0.003 * (i % 2 ? 1 : -1); });
   });
 
-  // Soft platforms (hover plates)
-  const plateMat = std(0x59616b, { m: 0.6, r: 0.45 });
-  const plateGlow = std(0x000000, { e: 0x55f2ff, ei: 3 });
-  const hover = new THREE.MeshBasicMaterial({ color: 0x55f2ff, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  // Torches at the back corners of the field
+  const flames = [];
+  const flameMat = new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  for (const x of [-7.6, 7.6]) {
+    scene.add(mesh(new THREE.CylinderGeometry(0.22, 0.3, 1.8, 6), std(0x77726c, { map: stone }), x, 0.9, -2.3));
+    scene.add(mesh(new THREE.CylinderGeometry(0.4, 0.25, 0.3, 8), trimMat, x, 1.9, -2.3));
+    const f = mesh(new THREE.ConeGeometry(0.3, 0.9, 7), flameMat, x, 2.45, -2.3, false);
+    scene.add(f);
+    flames.push(f);
+  }
+  updaters.push(() => {
+    for (const f of flames) f.scale.set(1, 0.8 + Math.random() * 0.5, 1);
+  });
+
+  // Soft platforms: floating stone slabs with gold trim and a crystal underneath.
+  const slabMat = std(0x8e8a84, { map: stone });
   for (const p of STAGE.platforms) {
     const g = new THREE.Group();
-    g.add(mesh(new THREE.BoxGeometry(p.w, 0.22, 2.4), plateMat, 0, -0.11, 0));
-    g.add(mesh(new THREE.BoxGeometry(p.w + 0.04, 0.06, 0.06), plateGlow, 0, -0.08, 1.21, false));
-    g.add(mesh(new THREE.BoxGeometry(p.w * 0.7, 0.18, 1.6), steel, 0, -0.3, 0));
-    for (const x of [-p.w * 0.3, p.w * 0.3]) {
-      const h = mesh(new THREE.CylinderGeometry(0.28, 0.05, 0.9, 8, 1, true), hover, x, -0.8, 0, false);
-      g.add(h);
-    }
+    g.add(mesh(new THREE.BoxGeometry(p.w, 0.26, 2.4), slabMat, 0, -0.13, 0));
+    g.add(mesh(new THREE.BoxGeometry(p.w + 0.06, 0.08, 0.1), trimMat, 0, -0.03, 1.22, false));
+    const c = mesh(new THREE.OctahedronGeometry(0.4, 0), crystalMat, 0, -0.7, 0, false);
+    c.scale.y = 1.6;
+    g.add(c);
     g.position.set(p.x, p.y, 0);
     scene.add(g);
   }
 
-  // Background helicopter circling the outpost
-  const heli = new THREE.Group();
-  const heliMat = std(0x2d3530, { m: 0.3 });
-  heli.add(mesh(new THREE.BoxGeometry(3, 1.2, 1.3), heliMat));
-  heli.add(mesh(new THREE.BoxGeometry(1, 0.8, 1.1), std(0x9fd0ff, { m: 0.8, r: 0.2 }), 1.7, 0.05, 0));
-  heli.add(mesh(new THREE.BoxGeometry(3.4, 0.35, 0.35), heliMat, -3, 0.25, 0));
-  const rotor = mesh(new THREE.BoxGeometry(7, 0.05, 0.3), std(0x111111), 0, 0.75, 0);
-  rotor.add(mesh(new THREE.BoxGeometry(0.3, 0.05, 7), std(0x111111)));
-  heli.add(rotor);
-  const tailRotor = mesh(new THREE.BoxGeometry(0.05, 1.4, 0.2), std(0x111111), -4.6, 0.3, 0.25);
-  heli.add(tailRotor);
-  const heliLight = mesh(new THREE.SphereGeometry(0.15, 6, 4), std(0x000000, { e: 0xff3030, ei: 5 }), -4.6, 0.7, 0, false);
-  heli.add(heliLight);
-  heli.scale.setScalar(0.9);
-  scene.add(heli);
-  updaters.push((t, dt) => {
-    const a = t * 0.12;
-    heli.position.set(Math.cos(a) * 55, 18 + Math.sin(t * 0.7) * 1.5, -70 + Math.sin(a) * 25);
-    heli.rotation.y = -a + Math.PI;
-    heli.rotation.z = 0.08;
-    rotor.rotation.y += dt * 30;
-    tailRotor.rotation.x += dt * 40;
-    heliLight.visible = Math.sin(t * 6) > 0.3;
+  // Birds circling in the distance
+  const birdMat = std(0x2a2430);
+  const birds = [];
+  for (let i = 0; i < 6; i++) {
+    const b = new THREE.Group();
+    const wl = mesh(new THREE.BoxGeometry(1.2, 0.08, 0.4), birdMat, -0.6, 0, 0, false);
+    const wr = mesh(new THREE.BoxGeometry(1.2, 0.08, 0.4), birdMat, 0.6, 0, 0, false);
+    b.add(mesh(new THREE.BoxGeometry(0.3, 0.2, 0.7), birdMat, 0, 0, 0, false), wl, wr);
+    b.userData = { wl, wr, r: 50 + Math.random() * 30, h: 20 + Math.random() * 12, speed: 0.08 + Math.random() * 0.05, off: Math.random() * 6 };
+    scene.add(b);
+    birds.push(b);
+  }
+  updaters.push((t) => {
+    for (const b of birds) {
+      const u = b.userData;
+      const a = t * u.speed + u.off;
+      b.position.set(Math.cos(a) * u.r, u.h + Math.sin(t + u.off) * 1.5, -90 + Math.sin(a) * 30);
+      b.rotation.y = -a;
+      const flap = Math.sin(t * 8 + u.off) * 0.5;
+      u.wl.rotation.z = flap;
+      u.wr.rotation.z = -flap;
+    }
   });
 
-  // Revival drone platforms, one per player
+  // Revival platforms: a Poké Ball-style disc per player, banded in the player's colour.
   const drones = [0, 1].map(() => {
     const g = new THREE.Group();
-    g.add(mesh(new THREE.CylinderGeometry(0.85, 0.55, 0.2, 12), std(0x3c434c, { m: 0.6, r: 0.4 }), 0, -0.1, 0));
+    g.add(mesh(new THREE.CylinderGeometry(0.85, 0.85, 0.12, 20), std(0xd83a3a, { r: 0.4 }), 0, 0.0, 0));
+    g.add(mesh(new THREE.CylinderGeometry(0.85, 0.7, 0.12, 20), std(0xf2f2f2, { r: 0.4 }), 0, -0.14, 0));
     const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
-    const ring = mesh(new THREE.TorusGeometry(0.85, 0.05, 6, 24), ringMat, 0, -0.08, 0, false);
-    ring.rotation.x = Math.PI / 2;
-    g.add(ring);
+    const band = mesh(new THREE.CylinderGeometry(0.87, 0.87, 0.05, 20), ringMat, 0, -0.07, 0, false);
+    g.add(band);
+    g.add(mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.3, 12), std(0xffffff, { e: 0xffffff, ei: 0.6 }), 0, -0.07, 0, false)).rotation.x = Math.PI / 2;
     g.add(mesh(new THREE.ConeGeometry(0.4, 1.4, 12, 1, true), new THREE.MeshBasicMaterial({
       color: 0xffffff, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
     }), 0, -0.9, 0, false)).rotation.x = Math.PI;
@@ -298,6 +396,11 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
 
   return {
     drones,
-    update(t, dt) { for (const u of updaters) u(t, dt); },
+    // Big moments (KOs, super-effective hits) make the crowd jump.
+    cheer(amount) { cheer = Math.min(1, cheer + amount); },
+    update(t, dt) {
+      cheer = Math.max(0, cheer - dt * 0.35);
+      for (const u of updaters) u(t, dt);
+    },
   };
 }

@@ -1,4 +1,4 @@
-// Particles, explosions, KO blasts, hitmarkers and flash lights. Particles use two
+// Particles, KO blasts, callouts and flash lights. Particles use two
 // instanced meshes (glowing sparks and solid smoke) so hundreds cost one draw call each.
 
 import * as THREE from 'three';
@@ -15,23 +15,6 @@ function additive(color, opacity = 1) {
   });
 }
 
-function hitmarkerTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 64;
-  const g = c.getContext('2d');
-  g.strokeStyle = '#fff';
-  g.lineWidth = 7;
-  g.lineCap = 'round';
-  for (const [x0, y0, x1, y1] of [[10, 10, 24, 24], [54, 10, 40, 24], [10, 54, 24, 40], [54, 54, 40, 40]]) {
-    g.beginPath();
-    g.moveTo(x0, y0);
-    g.lineTo(x1, y1);
-    g.stroke();
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
 
 export class Effects {
   constructor(scene) {
@@ -57,8 +40,6 @@ export class Effects {
     this.beams = [];
     this.beamGeo = new THREE.CylinderGeometry(1, 1, 1, 16, 1, true);
     this.beamGeo.translate(0, 0.5, 0);
-    this.markers = [];
-    this.markerTex = hitmarkerTexture();
     this.callouts = [];
     this.calloutTex = new Map();
 
@@ -125,23 +106,6 @@ export class Effects {
     this.light(x, y, 0xffc070, weaponId === 'smg' ? 6 : 18, 0.06);
   }
 
-  explosion(x, y, radius) {
-    for (let i = 0; i < 50; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const s = 3 + Math.random() * radius * 4;
-      const c = [0xfff2a0, 0xffb040, 0xff6020][i % 3];
-      this.add(0, x, y, (Math.random() - 0.5) * 2, Math.cos(a) * s, Math.sin(a) * s + 2, (Math.random() - 0.5) * 4,
-        0.3 + Math.random() * 0.4, 0.2 + Math.random() * 0.35, c, { drag: 4, grav: -2 });
-    }
-    for (let i = 0; i < 22; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const s = 1 + Math.random() * 4;
-      this.add(1, x, y, (Math.random() - 0.5) * 1.5, Math.cos(a) * s, Math.sin(a) * s + 1.5, (Math.random() - 0.5) * 2,
-        0.8 + Math.random() * 0.8, 0.5 + Math.random() * 0.5, i % 2 ? 0x3a3a3a : 0x5a5552, { drag: 2.5, grav: -1.5, grow: 0.6 });
-    }
-    this.ring(x, y, 0xffc070, radius * 1.6, 0.35);
-    this.light(x, y, 0xff9040, 60, 0.35);
-  }
 
   koBlast(x, y, color, nx, ny) {
     // A Smash-style blast column from the point of exit, pointing back toward the stage.
@@ -180,16 +144,6 @@ export class Effects {
     this.rings.push(m);
   }
 
-  hitmarker(x, y, heavy) {
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: this.markerTex, color: heavy ? 0xff5040 : 0xffffff, depthTest: false, transparent: true, toneMapped: false,
-    }));
-    s.position.set(x, y, 0.5);
-    s.renderOrder = 20;
-    s.userData = { life: 0.22, max: 0.22, size: heavy ? 1.1 : 0.6 };
-    this.scene.add(s);
-    this.markers.push(s);
-  }
 
   // Floating Showdown-style text ("SUPER EFFECTIVE!", "FELL ASLEEP!") that rises and fades.
   callout(x, y, text, color = 0xffffff) {
@@ -309,10 +263,6 @@ export class Effects {
       o.position.y = o.userData.y + k * 0.8;
       o.material.opacity = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1;
     });
-    fade(this.markers, (o, k) => {
-      o.scale.setScalar(o.userData.size * (1.3 - k * 0.5));
-      o.material.opacity = 1 - k * k;
-    });
     for (const l of this.lights) {
       const u = l.userData;
       if (u.life > 0) {
@@ -329,7 +279,7 @@ export class Effects {
     this.glow.count = 0;
     this.smoke.count = 0;
     for (const l of this.lights) { l.userData.life = 0; l.intensity = 0; }
-    for (const arr of [this.rings, this.beams, this.markers, this.callouts]) {
+    for (const arr of [this.rings, this.beams, this.callouts]) {
       for (const o of arr) {
         this.scene.remove(o);
         o.material.dispose();

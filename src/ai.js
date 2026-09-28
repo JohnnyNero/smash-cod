@@ -101,6 +101,18 @@ export class CpuBrain {
       const facingFoe = Math.sign(dx) === me.facing;
       const foeAttacking = foe.state === 'attack' && foe.move && foe.move.hitboxes;
 
+      // Showdown sense: avoid moves the target resists or is immune to, favour super-effective ones.
+      const eff = (slot) => (me.game.moveEff ? me.game.moveEff(me, slot, foe) : 1);
+      const usable = (slot) => me.pp[slot] > 0 && eff(slot) !== 0 && (eff(slot) >= 1 || Math.random() < 0.25);
+      const boostMove = (slot) => (me.moveset.specials[slot].events || []).some((e) => e.do === 'boost' && Object.values(e.boosts).some((v) => v > 0));
+      const downOk = () => {
+        const m = me.moveset.specials.down;
+        if (!usable('down')) return false;
+        if (boostMove('down')) return ((me.boosts.atk || 0) + (me.boosts.spa || 0)) < 4; // don't over-set-up
+        if (m.id === 'leechseed') return !foe.seed;
+        if (m.id === 'destinybond') return me.percent > 80;
+        return true;
+      };
       if (!me.grounded) this.shieldHold = 0; // shield in the air is an air dodge; don't do it by accident
       if (this.shieldHold > 0) {
         this.shieldHold -= dt;
@@ -129,7 +141,7 @@ export class CpuBrain {
             mx = Math.sign(dx);
             tap('attack');
           }
-        } else if (me.grounded && adx > 5 && Math.random() < 0.06 && me.game.cpuSwitchChoice) {
+        } else if (me.grounded && adx > 5 && Math.random() < 0.08 && me.game.cpuSwitchChoice) {
           // Bad matchup? Switch to a better answer from a safe distance (Showdown-style).
           const pick = me.game.cpuSwitchChoice(me.slot);
           if (pick >= 0) {
@@ -141,14 +153,14 @@ export class CpuBrain {
           tap('jump');
         } else if (me.grounded && me.platform !== 'main' && dy < -1.5 && Math.random() < 0.5) {
           my = -1;
-        } else if (this.projTimer <= 0 && adx > 4 && Math.abs(dy) < 1.5 && me.pp.neutral > 0) {
+        } else if (this.projTimer <= 0 && adx > 4 && Math.abs(dy) < 1.5 && usable('neutral')) {
           this.projTimer = 2 + Math.random() * 3;
           if (!facingFoe) mx = Math.sign(dx);
           tap('special');
-        } else if (me.grounded && adx > 1.5 && adx < 5 && Math.abs(dy) < 1 && me.pp.side > 0 && Math.random() < 0.12 * c.aggression) {
+        } else if (me.grounded && adx > 1.5 && adx < 5 && Math.abs(dy) < 1 && usable('side') && Math.random() < 0.12 * c.aggression * (eff('side') > 1 ? 2.5 : 1)) {
           mx = Math.sign(dx); // side special toward them
           tap('special');
-        } else if (me.grounded && adx > 5 && me.pp.down > 0 && Math.random() < 0.08) {
+        } else if (me.grounded && adx > 5 && downOk() && Math.random() < 0.08) {
           my = -1; // down special: setup moves / Leech Seed / Destiny Bond from a safe distance
           tap('special');
         } else {

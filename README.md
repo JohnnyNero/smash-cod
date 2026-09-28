@@ -5,11 +5,14 @@ execution decides who wins.** It's 3D and runs in the browser, with gamepads, ke
 
 The full design and roadmap live in [`docs/DESIGN.md`](docs/DESIGN.md).
 
-**Status: phase 3 of 4.** Build a team of 3 from six Pokémon (Pikachu, Charizard, Blastoise,
-Venusaur, Gengar, Lucario), each with 4 moves from its real learnset. You get team preview, switching
-mid-fight, and hidden simultaneous picks after every KO. Moves stay secret until used, and there's
-the full type chart ("SUPER EFFECTIVE!"), stat boosts, sleep, Leech Seed and Destiny Bond.
-Phase 4 adds a new battle-arena stage, a smarter CPU, and polish.
+**Status: v1 complete (all 4 phases).** Build a team of 3 from six Pokémon (Pikachu, Charizard,
+Blastoise, Venusaur, Gengar, Lucario), each with 4 moves from its real learnset. Then battle on
+Plateau Stadium:
+- Team preview, switching mid-fight, and hidden simultaneous picks after every KO.
+- Moves stay secret until used.
+- The full type chart ("SUPER EFFECTIVE!", with ▲ ▼ ✕ hints on the HUD), plus stat boosts, sleep,
+  Leech Seed and Destiny Bond.
+- A CPU that plays the type matchups.
 
 ## Play
 
@@ -73,4 +76,4 @@ Add `?quality=low` to the URL on a slow machine. Phones use it automatically.
 | `src/input.js`, `src/touch.js` | Gamepads, keyboard, touch |
 | `src/audio.js` | Synthesized sounds |
 | `src/ui.js`, `src/style.css` | Menus and HUD |
-| `src/stage.js`, `src/effects.js` | Stage visuals, particles, KO blasts |
+| `src/stage.js`, `src/effects.js` | Plateau Stadium visuals and crowd; particles, KO blasts, callouts |

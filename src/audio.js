@@ -129,6 +129,13 @@ export class Audio {
     else this.noise(0.5, { type: 'highpass', freq: 3000, gain: 0.12, x });
   }
 
+  // Crowd roar: a swelling band of noise.
+  crowd(amount = 1) {
+    if (this.quiet) return;
+    this.noise(1.8, { type: 'bandpass', freq: 900, freqEnd: 600, q: 0.6, gain: 0.35 * amount, attack: 0.25 });
+    this.noise(1.4, { type: 'bandpass', freq: 2200, q: 1.2, gain: 0.12 * amount, attack: 0.2, delay: 0.1 });
+  }
+
   switchIn(x) {
     this.tone(400, 0.15, { type: 'square', freqEnd: 900, gain: 0.1, x });
     this.noise(0.25, { type: 'bandpass', freq: 1500, freqEnd: 4000, q: 1, gain: 0.2, x });

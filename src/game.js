@@ -10,7 +10,7 @@ import { SPECIES, SPECIES_LIST } from './data/pokemon.js';
 import { SLOTS, moveInfo } from './data/moveset.js';
 import { loadTeam, saveTeam, randomTeam, cycleSpecies, cycleMove, matchupScore, member } from './team.js';
 import { PUMMEL } from './data/moves.js';
-import { damageFor } from './damage.js';
+import { damageFor, moveEffect } from './damage.js';
 import { Fighter } from './fighter.js';
 import { CreatureModel, glowMat } from './models/creature.js';
 import { buildStage } from './stage.js';
@@ -292,7 +292,7 @@ export class Game {
       slots,
       mode: this.mode,
       cpuName: RULES.cpu[st.cpu],
-      rulesText: `${rules} · STAGE: OUTPOST`,
+      rulesText: `${rules} · STAGE: PLATEAU STADIUM`,
       canStart: full && this.slots[0].ready,
       hint: !full
         ? 'Waiting for P2: press <b>A</b> on a second controller, or set <b>CPU</b> in P1\'s rules'
@@ -639,12 +639,24 @@ export class Game {
     return best;
   }
 
-  // CPU mid-fight switch: only when a teammate has a clearly better matchup into the foe.
+  // CPU mid-fight switch: when a teammate has a clearly better matchup into the foe, or to
+  // rest a badly damaged Pokémon on the bench while a healthy one takes over.
   cpuSwitchChoice(slot) {
     const p = this.players[slot];
     if (!this.teamMode || p.switchCd > 0 || this.state !== 'playing') return -1;
     const pick = this.cpuPick(slot, false);
-    return pick !== p.active ? pick : -1;
+    if (pick !== p.active) return pick;
+    const cur = p.team[p.active];
+    if (cur.percent > 110 && Math.random() < 0.5) {
+      const fresh = this.aliveIndexes(p).filter((k) => k !== p.active && p.team[k].percent < 50);
+      if (fresh.length) return fresh[0];
+    }
+    return -1;
+  }
+
+  // Showdown effectiveness of f's special in `slot` against `target` (for the CPU and HUD).
+  moveEff(f, slot, target) {
+    return target ? moveEffect(f.moveset.specials[slot], target.sp) : 1;
   }
 
   slotMoves(f) {
@@ -964,6 +976,7 @@ export class Game {
         if (superEff) {
           this.effects.callout(hx, hy + 0.8, dmg.eff >= 4 ? 'SUPER EFFECTIVE!!' : 'SUPER EFFECTIVE!', 0xffd23a);
           this.audio.superEffective(hx);
+          this.stage.cheer(0.35);
         } else {
           this.effects.callout(hx, hy + 0.8, 'NOT VERY EFFECTIVE…', 0x9aa3b5);
         }
@@ -1141,6 +1154,8 @@ export class Game {
     const ny = 3 - cy;
     const m = Math.hypot(nx, ny) || 1;
     this.effects.koBlast(cx, cy, f.colors.main, nx / m, ny / m);
+    this.stage.cheer(1);
+    this.audio.crowd(1);
     this.shake(1.2);
     this.audio.ko(cx);
     for (const x of this.fighters) this.rumble(x, 1, 1, x === f ? 500 : 250);

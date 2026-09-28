@@ -123,6 +123,29 @@ This is the source of truth for decisions. Update it when a decision changes.
 - **CPU:** picks leads and replacements by a type-matchup score, and occasionally switches mid-fight
   when a teammate has a clearly better matchup. Smarter switching is phase 4.
 
+## Phase 4 notes
+
+- **Plateau Stadium** replaces the Outpost: a stone battle field with Pokémon-style court markings
+  floating above a stadium bowl, with an animated crowd that jumps on KOs and super-effective hits,
+  floodlights, team banners, crystals under the rock, torches, birds, and Poké Ball revival platforms.
+  Collision geometry is unchanged. The bowl sits below the field so the sky stays behind the
+  fighters (readability first).
+- **Effectiveness hints:** revealed moves on the HUD show ▲ (super effective), ▼ (resisted) or
+  ✕ (no effect) against the opponent's current Pokémon. The KO-pick screen tags options
+  "GOOD vs X" / "RISKY vs X" from public type information only.
+- **CPU:** avoids immune/resisted specials (uses super-effective ones ~3× as often as resisted ones
+  in testing), doesn't over-stack setup moves, only re-seeds when the foe isn't seeded, saves
+  Destiny Bond for when it's damaged, switches out of bad matchups or to rest a heavily damaged
+  Pokémon, and picks leads/replacements by matchup.
+- Polish: crowd roar on KOs, normals have display names in the killfeed ("Forward Smash"),
+  dead gun-era effects removed.
+
+### Ideas after v1
+
+Tera (once per match), switch-in resist rewards, abilities, items (Choice Band, Leftovers, Life Orb,
+Focus Sash), hazards (Stealth Rock, Spikes), burn/paralysis/toxic, weather, sleep persisting on the
+bench, Journey mode (evolution), more Pokémon and stages, music, online play.
+
 ## Controls (all devices)
 
 | Action | Gamepad | Keyboard P1 | Keyboard P2 | Touch |
@@ -179,8 +202,8 @@ Exact bindings live in `src/input.js` and the README.
    because the roster's moves needed them: stat stages (Swords Dance, Shell Smash, Close Combat drops),
    sleep (Sleep Powder, Hypnosis), Leech Seed, drain (Giga Drain), recoil (Flare Blitz), Destiny Bond.
 3. **Strategy layer** ✅ done: team builder, team preview, switching, KO hidden picks, bench healing,
-   HUD info (revealed moves, bench %). Effectiveness hints on attacks are still to do.
-4. **Battle arena stage, CPU that switches sensibly, polish**.
+   HUD info (revealed moves, bench %). Effectiveness hints landed in phase 4.
+4. **Battle arena stage, CPU that switches sensibly, polish** ✅ done (see Phase 4 notes).
 
 Later: Tera (once per match), switch-in resist rewards, abilities, items (Choice Band, Leftovers,
 Life Orb, Focus Sash), hazards (Stealth Rock, Spikes), status (burn, paralysis, sleep, toxic),

@@ -21,6 +21,14 @@ export function effMultiplier(eff) {
   return 1;
 }
 
+// Raw Showdown effectiveness of a move against a species, including the Grass immunity to
+// powder moves and Leech Seed. Used for HUD hints and the CPU.
+export function moveEffect(move, defSp) {
+  if (!move || !move.type || move.type === '???') return 1;
+  if (defSp.types.includes('Grass') && (move.powder || move.id === 'leechseed')) return 0;
+  return typeEffectiveness(move.type, defSp.types);
+}
+
 export function damageFor(attacker, defender, base, move) {
   const cat = (move && move.cat) || 'physical';
   const a = attacker.sp.baseStats;
