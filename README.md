@@ -5,10 +5,11 @@ execution decides who wins.** It's 3D and runs in the browser, with gamepads, ke
 
 The full design and roadmap live in [`docs/DESIGN.md`](docs/DESIGN.md).
 
-**Status: phase 2 of 4.** All 6 Pokémon are playable (Pikachu, Charizard, Blastoise, Venusaur,
-Gengar, Lucario) with real Showdown stats, types, the full type chart ("SUPER EFFECTIVE!"), 4 specials
-each with real PP, stat boosts, sleep, Leech Seed and Destiny Bond. The team builder, team of 3,
-switching and hidden KO picks come in phase 3.
+**Status: phase 3 of 4.** Build a team of 3 from six Pokémon (Pikachu, Charizard, Blastoise,
+Venusaur, Gengar, Lucario), each with 4 moves from its real learnset. You get team preview, switching
+mid-fight, and hidden simultaneous picks after every KO. Moves stay secret until used, and there's
+the full type chart ("SUPER EFFECTIVE!"), stat boosts, sleep, Leech Seed and Destiny Bond.
+Phase 4 adds a new battle-arena stage, a smarter CPU, and polish.
 
 ## Play
 
@@ -21,6 +22,8 @@ Open the URL it prints. Phones on the same Wi-Fi can open the `Network:` URL. Ev
 working branch also deploys to GitHub Pages.
 
 - **Couch 1v1:** plug in two controllers and press **A** on each to join.
+- **Team building:** on the select screen, **◀▶** changes a Pokémon, and **A** on it edits its 4 moves.
+  Teams are saved in your browser.
 - **Solo / phone:** set **CPU** in P1's rules (it's on by default on phones). Phones play in landscape.
 
 ## Controls
@@ -28,12 +31,14 @@ working branch also deploys to GitHub Pages.
 | Action | Gamepad | Keyboard P1 | Keyboard P2 | Touch |
 |---|---|---|---|---|
 | Move | L-stick / D-pad | WASD | Arrows | left thumb |
-| Jump (tap for short hop) | X / Y | Space | ' | JUMP |
+| Jump (tap for short hop) | X | Space | ' | JUMP |
 | Attack (+ direction = tilts / aerials) | A | F | / | ATTACK |
 | Smash attack (hold to charge) | R-stick, or tap direction + A | tap direction + F | tap direction + / | flick + ATTACK |
 | Special (+ direction = your 4 moves) | B | G | . | SPECIAL |
 | Shield (+ flick = roll / spot dodge; air = air dodge) | RB / LT / RT | H | , | SHIELD |
 | Grab (then direction = throw, attack = pummel) | LB, or shield + A | R | ; | GRAB |
+| Switch Pokémon (team mode; + ◀ ▲ ▶ picks who) | Y | T | L | SWAP |
+| Hidden picks at team preview / after a KO | ◀ ▲ ▶ (▼ / A = stay in) | A / W / D | arrows | tap |
 | Drop through platform / fast fall | flick down | S | ↓ | flick down |
 | Pause | Start | Esc | Enter | II |
 
@@ -63,6 +68,7 @@ Add `?quality=low` to the URL on a slow machine. Phones use it automatically.
 | `src/game.js` | Match flow, hit resolution, projectiles, grabs, KOs, camera, menus |
 | `src/models/creature.js` | Creature rig and code-driven animation |
 | `src/models/species.js` | Per-species low-poly model builders |
+| `src/team.js` | Team building, validation (Species Clause, legal moves), saving, matchup scoring |
 | `src/ai.js` | CPU opponent |
 | `src/input.js`, `src/touch.js` | Gamepads, keyboard, touch |
 | `src/audio.js` | Synthesized sounds |

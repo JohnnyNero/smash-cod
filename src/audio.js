@@ -129,6 +129,11 @@ export class Audio {
     else this.noise(0.5, { type: 'highpass', freq: 3000, gain: 0.12, x });
   }
 
+  switchIn(x) {
+    this.tone(400, 0.15, { type: 'square', freqEnd: 900, gain: 0.1, x });
+    this.noise(0.25, { type: 'bandpass', freq: 1500, freqEnd: 4000, q: 1, gain: 0.2, x });
+  }
+
   grab(x) { this.noise(0.08, { type: 'bandpass', freq: 700, q: 1, gain: 0.3, x }); }
   dodge(x) { this.noise(0.12, { type: 'highpass', freq: 2500, gain: 0.12, x }); }
   ledge(x) { this.tone(500, 0.06, { type: 'triangle', freqEnd: 700, gain: 0.1, x }); }

@@ -23,6 +23,7 @@ export class TouchControls {
         <button data-b="jump" class="t-btn t-jump">JUMP</button>
         <button data-b="attack" class="t-btn t-attack">ATTACK</button>
       </div>
+      <button data-b="swap" class="t-btn t-swap">SWAP</button>
       <button data-b="start" class="t-btn t-pause">II</button>`;
     root.appendChild(this.el);
     this.stick = { el: this.el.querySelector('[data-stick="move"]'), id: null, ox: 0, oy: 0, x: 0, y: 0 };

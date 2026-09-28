@@ -3,7 +3,7 @@
 // hitboxes/projectiles between fighters. Everything is counted in 60 fps frames.
 //
 // States: ground, air, jumpsquat, attack, landlag, shield, shieldbreak, dodge, holding, held,
-// hitstun, ledge, getup, helpless, sleep.
+// hitstun, ledge, getup, helpless, sleep, switching.
 
 import { PHYS, COMBAT, SHIELD, DODGE, LEDGE, STAGE } from './config.js';
 import { THROWS, PUMMEL } from './data/moves.js';
@@ -15,7 +15,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const approach = (v, target, step) => (v < target ? Math.min(v + step, target) : Math.max(v - step, target));
 
 export class Fighter {
-  constructor(game, slot, species, colors) {
+  constructor(game, slot, species, colors, moves) {
     this.game = game;
     this.slot = slot;
     this.sp = species;
@@ -23,7 +23,8 @@ export class Fighter {
     this.st = fighterStats(species);
     this.w = species.size.w;
     this.h = species.size.h;
-    this.moveset = buildMoveset(species);
+    this.moveset = buildMoveset(species, moves || species.moves);
+    this.benched = false; // on the bench in team mode (not on stage)
     this.stocks = 3;
     this.eliminated = false;
     this.streak = 0;
@@ -70,7 +71,7 @@ export class Fighter {
   }
 
   get center() { return { x: this.pos.x, y: this.pos.y + this.h * 0.5 }; }
-  get active() { return !this.dead && !this.eliminated; }
+  get active() { return !this.dead && !this.eliminated && !this.benched; }
 
   get intangible() {
     if (this.invuln > 0 || this.onRevival) return true;
@@ -176,6 +177,11 @@ export class Fighter {
       case 'sleep':
         this.runSleep();
         break;
+      case 'switching':
+        // Recall wind-up: you can be hit out of it.
+        this.vel.x = approach(this.vel.x, 0, PHYS.groundFriction * DT);
+        if (this.sf >= 14) this.game.performSwitch(this.slot, this.switchTarget, false);
+        break;
       default:
         break;
     }
@@ -226,6 +232,7 @@ export class Fighter {
   groundControl() {
     const inp = this.inp;
     const n = this.moveset.normals;
+    if (inp.pressed.swap && this.tryStartSwitch()) return;
     if (inp.pressed.jump) { this.setState('jumpsquat'); return; }
     if (inp.pressed.grab || (inp.held.shield && inp.pressed.attack)) { this.startMove(n.grab); return; }
     if (inp.pressed.special) { this.startSpecial(); return; }
@@ -279,6 +286,7 @@ export class Fighter {
 
   airControl() {
     const inp = this.inp;
+    if (inp.pressed.swap && this.tryStartSwitch()) return;
     if (inp.pressed.jump && this.airJumps > 0) {
       this.airJumps--;
       this.vel.y = this.st.doubleJump;
@@ -475,6 +483,11 @@ export class Fighter {
     this.charging = false;
     this.zip = null;
     if (m && m.recoil) this.percent = Math.min(999, this.percent + m.recoil);
+    if (this.pivotPending) {
+      // Volt Switch / U-turn: land the hit, then switch out for free.
+      this.pivotPending = false;
+      if (this.game.pivot(this)) return;
+    }
     if (this.holding) this.releaseGrab(false);
     if (this.grounded) this.setState('ground');
     else this.setState(m && m.helpless ? 'helpless' : 'air');
@@ -916,6 +929,54 @@ export class Fighter {
     if (x < B.left || x > B.right || y < B.bottom || y > B.top) this.game.onKO(this);
   }
 
+  // ------------------------------------------------------------------ switching (team mode)
+
+  // SWAP + ◀ / ▲ / ▶ picks team member 1 / 2 / 3; SWAP alone picks the next one on the bench.
+  swapIndex() {
+    if (this.sx < -0.5) return 0;
+    if (this.sy > 0.5) return 1;
+    if (this.sx > 0.5) return 2;
+    return -1;
+  }
+
+  tryStartSwitch() {
+    const target = this.game.switchTargetFor(this.slot, this.swapIndex());
+    if (target < 0) return false;
+    this.switchTarget = target;
+    this.setState('switching');
+    this.game.audio.dodge(this.pos.x);
+    return true;
+  }
+
+  // Leaving the field: Showdown clears stat stages, Leech Seed and Destiny Bond on switch-out.
+  onSwitchOut() {
+    if (this.holding) this.releaseGrab(false);
+    Object.assign(this, {
+      move: null, zip: null, dodge: null, ledge: null, heldBy: null, charging: false,
+      hitstun: 0, tumble: false, seed: null, destinyBond: 0, pivotPending: false, sleepFrames: 0,
+      boosts: {}, shieldStun: 0, flash: 0, invuln: 0,
+    });
+    this.st = fighterStats(this.sp);
+    this.state = 'ground';
+    this.benched = true;
+  }
+
+  // Coming in where the previous Pokémon was standing.
+  onSwitchIn(from) {
+    this.benched = false;
+    this.pos.x = from.pos.x;
+    this.pos.y = from.pos.y;
+    this.vel.x = from.vel.x * 0.3;
+    this.vel.y = Math.max(0, from.vel.y);
+    this.facing = from.facing;
+    this.grounded = from.grounded;
+    this.platform = from.platform;
+    this.airJumps = from.grounded ? this.st.airJumps : Math.min(from.airJumps, this.st.airJumps);
+    this.airDodgeReady = true;
+    this.fastFall = false;
+    this.setState(this.grounded ? 'ground' : 'air');
+  }
+
   // ------------------------------------------------------------------ stats & status
 
   // Showdown stat stages (-6..+6). They last until this Pokémon is KO'd (or switched, phase 3).
@@ -1030,6 +1091,7 @@ export class Fighter {
     this.ledge = null;
     this.charging = false;
     this.heldBy = null;
+    this.pivotPending = false;
     this.vel.x = dx * launch;
     this.vel.y = dy * launch;
     this.hitstun = launch * COMBAT.hitstunPerLaunch + 0.05;

@@ -103,18 +103,39 @@ This is the source of truth for decisions. Update it when a decision changes.
 - Normals (jab/tilts/aerials/throws) are typeless, so only specials interact with the type chart.
 - CPU hard-vs-hard KOs land around 100–200% (heavies at the top end); blast zones tightened.
 
+## Phase 3 notes
+
+- **Modes:** TEAM (default, 3v3 Showdown mode), STOCK and TIME (single Pokémon, classic Smash).
+- **Team builder** lives on the select screen: ◀▶ on a Pokémon row changes species (Species Clause:
+  no duplicates), A opens its move editor (4 moves from its real learnset, no duplicates; type,
+  category, power and PP shown). Teams are saved per player slot in the browser (localStorage).
+- **Team preview:** species and types only (moves secret). Each player presses ◀ ▲ ▶ for member
+  1 / 2 / 3 as their lead; the screen only shows "LOCKED IN". 15 s timer, CPU picks by matchup.
+- **Switching:** SWAP + ◀ ▲ ▶ (or SWAP alone for the next one). 14-frame recall you can be hit out
+  of, then the new Pokémon appears where the old one stood. 5 s cooldown. Switching out clears stat
+  stages, Leech Seed, Destiny Bond and sleep (sleep persisting on the bench is a possible later rule).
+- **Bench:** each Pokémon keeps its own %, PP and stats; benched ones heal 1% per second.
+- **Volt Switch** pivots: if it hits, you switch to the next healthy teammate for free.
+- **KO picks:** the battle pauses (6 s). The KO'd player picks their next Pokémon; the other player
+  may stay (▼ / A) or switch for free. Both are revealed together ("PIKACHU vs GENGAR").
+- **Information:** in TEAM mode, HUD moves read "???" until used; the team strip shows each member's
+  % and fainted status.
+- **CPU:** picks leads and replacements by a type-matchup score, and occasionally switches mid-fight
+  when a teammate has a clearly better matchup. Smarter switching is phase 4.
+
 ## Controls (all devices)
 
 | Action | Gamepad | Keyboard P1 | Keyboard P2 | Touch |
 |---|---|---|---|---|
 | Move | L-stick | A/D (W/S up/down) | Arrows | left stick |
-| Jump | X / Y | Space | ' | JUMP |
+| Jump | X | Space | ' | JUMP |
 | Attack (jab/tilts/aerials) | A | F | / | ATTACK |
 | Smash attack | R-stick flick, or tap direction + Attack together, hold to charge | tap dir + F | tap dir + / | flick stick + ATK |
 | Special (4 moves) | B + direction | G + direction | . + direction | SPECIAL |
 | Shield / dodge / air dodge | RB / LT / RT | H | , | SHIELD |
 | Grab | LB, or Shield + Attack | R | ; | GRAB |
-| Switch Pokémon (phase 3) | Select | T | L | SWAP |
+| Switch Pokémon (+ ◀ ▲ ▶ to choose) | Y | T | L | SWAP |
+| Hidden picks (preview / KO) | stick ◀ ▲ ▶, ▼ / A = stay | A ◀ W ▲ D ▶ | arrows | tap |
 
 Exact bindings live in `src/input.js` and the README.
 
@@ -157,8 +178,8 @@ Exact bindings live in `src/input.js` and the README.
    learnset checks; 3D models and animations for the roster; effectiveness callouts. Pulled in early
    because the roster's moves needed them: stat stages (Swords Dance, Shell Smash, Close Combat drops),
    sleep (Sleep Powder, Hypnosis), Leech Seed, drain (Giga Drain), recoil (Flare Blitz), Destiny Bond.
-3. **Strategy layer**: team builder, team preview, switching, KO hidden picks, bench healing,
-   HUD info (revealed moves, bench %, effectiveness hints).
+3. **Strategy layer** ✅ done: team builder, team preview, switching, KO hidden picks, bench healing,
+   HUD info (revealed moves, bench %). Effectiveness hints on attacks are still to do.
 4. **Battle arena stage, CPU that switches sensibly, polish**.
 
 Later: Tera (once per match), switch-in resist rewards, abilities, items (Choice Band, Leftovers,

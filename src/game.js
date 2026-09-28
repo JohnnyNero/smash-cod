@@ -6,7 +6,9 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SIM_DT, STAGE, SHIELD, COMBAT, PLAYER_COLORS, RULES, TYPE_COLORS } from './config.js';
-import { SPECIES_LIST } from './data/pokemon.js';
+import { SPECIES, SPECIES_LIST } from './data/pokemon.js';
+import { SLOTS, moveInfo } from './data/moveset.js';
+import { loadTeam, saveTeam, randomTeam, cycleSpecies, cycleMove, matchupScore, member } from './team.js';
 import { PUMMEL } from './data/moves.js';
 import { damageFor } from './damage.js';
 import { Fighter } from './fighter.js';
@@ -20,9 +22,13 @@ import { BUTTONS } from './input.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const rand = (n) => Math.floor(Math.random() * n);
-const SELECT_ROWS = [['mon', 'mode', 'limit', 'cpu', 'ready'], ['mon', 'ready']];
 const DEVICE_LABELS = { kb1: 'KEYBOARD · WASD', kb2: 'KEYBOARD · ARROWS', touch: 'TOUCH', cpu: 'CPU' };
 const hexColor = (css) => parseInt(css.slice(1), 16);
+const SWITCH_COOLDOWN = 300; // frames between voluntary switches
+const PICK_TIME = 6; // seconds for the hidden picks after a KO
+const PREVIEW_TIME = 15; // seconds to pick a lead at team preview
+// Hidden picks: ◀ / ▲ / ▶ choose team member 1 / 2 / 3 (the mapping is public, the choice is not).
+const pickFromNav = (d) => (d.nav.left ? 0 : d.nav.up ? 1 : d.nav.right ? 2 : -1);
 
 function circleBox(cx, cy, r, minX, minY, maxX, maxY) {
   const nx = clamp(cx, minX, maxX);
@@ -66,8 +72,8 @@ export class Game {
 
     this.settings = { mode: 0, stocks: 3, minutes: 3, cpu: this.mobile ? 2 : 0 };
     this.slots = [this.newSlot(0), this.newSlot(1)];
-    this.fighters = [];
-    this.models = [];
+    this.players = [];
+    this.fighters = []; // the active fighter of each player, indexed by player slot
     this.projectiles = [];
     this.previews = [null, null];
     this.pending = [{}, {}];
@@ -84,8 +90,11 @@ export class Game {
     this.enterTitle();
   }
 
+  get mode() { return RULES.modes[this.settings.mode]; }
+  get teamMode() { return this.mode === 'TEAM' && !this.demo; }
+
   newSlot(i) {
-    return { device: null, mon: i, row: 0, ready: false };
+    return { device: null, team: loadTeam(i), row: 0, ready: false, edit: -1 };
   }
 
   resize() {
@@ -116,7 +125,11 @@ export class Game {
     this.touch.setVisible(false);
     this.ui.announcer.innerHTML = '';
     this.ui.killfeed.innerHTML = '';
-    for (const s of this.slots) s.ready = s.device === 'cpu';
+    for (const s of this.slots) {
+      s.ready = s.device === 'cpu';
+      s.edit = -1;
+      if (s.device === 'cpu') s.team = randomTeam(); // a fresh CPU team each time
+    }
     if (joinId) this.join(joinId);
     this.refreshCpuSlot();
     this.ui.show('select');
@@ -125,11 +138,15 @@ export class Game {
 
   join(id) {
     if (this.slots.some((s) => s.device === id)) return;
-    const slot = this.slots.find((s) => !s.device) || (this.slots[1].device === 'cpu' ? this.slots[1] : null);
-    if (!slot) return;
+    const i = this.slots.findIndex((s) => !s.device);
+    const idx = i >= 0 ? i : this.slots[1].device === 'cpu' ? 1 : -1;
+    if (idx < 0) return;
+    const slot = this.slots[idx];
+    if (slot.device === 'cpu') slot.team = loadTeam(idx);
     slot.device = id;
     slot.ready = false;
     slot.row = 0;
+    slot.edit = -1;
     this.audio.uiConfirm();
     this.renderSelect();
   }
@@ -152,11 +169,12 @@ export class Game {
     const s = this.slots[1];
     if (this.settings.cpu > 0 && !s.device) {
       s.device = 'cpu';
-      s.mon = rand(SPECIES_LIST.length);
+      s.team = randomTeam();
       s.ready = true;
     } else if (this.settings.cpu === 0 && s.device === 'cpu') {
       s.device = null;
       s.ready = false;
+      s.team = loadTeam(1);
     }
   }
 
@@ -166,12 +184,28 @@ export class Game {
     return '';
   }
 
+  // Card rows. On a Pokémon row, ◀▶ changes species and A opens its move editor.
+  rowsFor(i) {
+    const s = this.slots[i];
+    if (s.edit >= 0) return [...SLOTS.map((k) => 'mv:' + k), 'done'];
+    const mons = this.mode === 'TEAM' ? [0, 1, 2] : [0];
+    const rules = i === 0 ? (this.mode === 'TEAM' ? ['mode', 'cpu'] : ['mode', 'limit', 'cpu']) : [];
+    return [...mons.map((k) => 'mon:' + k), ...rules, 'ready'];
+  }
+
+  rowLabel(key) {
+    if (key.startsWith('mon:')) return this.mode === 'TEAM' ? `POKÉMON ${+key.slice(4) + 1}` : 'POKÉMON';
+    if (key.startsWith('mv:')) return { neutral: 'B', side: '→B', up: '↑B', down: '↓B' }[key.slice(3)];
+    return { mode: 'MODE', limit: 'LIMIT', cpu: 'CPU', done: '', ready: '' }[key];
+  }
+
   rowValue(key, s) {
     const st = this.settings;
+    if (key.startsWith('mon:')) return SPECIES[s.team[+key.slice(4)].species].name.toUpperCase();
+    if (key.startsWith('mv:')) return moveInfo(s.team[s.edit].moves[key.slice(3)]).name;
     switch (key) {
-      case 'mon': return SPECIES_LIST[s.mon].name.toUpperCase();
       case 'mode': return RULES.modes[st.mode];
-      case 'limit': return st.mode === 0 ? `${st.stocks} STOCK` : `${st.minutes} MIN`;
+      case 'limit': return this.mode === 'TIME' ? `${st.minutes} MIN` : `${st.stocks} STOCK`;
       case 'cpu': return RULES.cpu[st.cpu];
       default: return '';
     }
@@ -180,24 +214,60 @@ export class Game {
   change(i, key, dir) {
     const s = this.slots[i];
     const st = this.settings;
-    if (!s.device || s.device === 'cpu' || s.ready) return;
+    if (!s.device || s.device === 'cpu' || s.ready || !key) return;
     const cyc = (v, n) => (v + dir + n) % n;
-    if (key === 'mon') s.mon = cyc(s.mon, SPECIES_LIST.length);
-    else if (i !== 0) return;
-    else if (key === 'mode') st.mode = cyc(st.mode, RULES.modes.length);
-    else if (key === 'limit') {
-      if (st.mode === 0) st.stocks = clamp(st.stocks + dir, 1, 5);
-      else st.minutes = clamp(st.minutes + dir, 1, 5);
+    if (key.startsWith('mon:')) {
+      cycleSpecies(s.team, +key.slice(4), dir);
+      saveTeam(i, s.team);
+    } else if (key.startsWith('mv:')) {
+      cycleMove(s.team[s.edit], key.slice(3), dir);
+      saveTeam(i, s.team);
+    } else if (i !== 0) {
+      return;
+    } else if (key === 'mode') {
+      st.mode = cyc(st.mode, RULES.modes.length);
+      for (const [k, sl] of this.slots.entries()) sl.row = Math.min(sl.row, this.rowsFor(k).length - 1);
+    } else if (key === 'limit') {
+      if (this.mode === 'TIME') st.minutes = clamp(st.minutes + dir, 1, 5);
+      else st.stocks = clamp(st.stocks + dir, 1, 5);
     } else if (key === 'cpu') {
       st.cpu = cyc(st.cpu, RULES.cpu.length);
       this.refreshCpuSlot();
+    } else {
+      return;
     }
     this.audio.ui();
     this.renderSelect();
   }
 
+  // A / confirm on a row: open or close the move editor, or ready up.
+  confirmRow(i) {
+    const s = this.slots[i];
+    const key = this.rowsFor(i)[s.row];
+    if (key.startsWith('mon:')) {
+      s.edit = +key.slice(4);
+      s.row = 0;
+      this.audio.ui();
+    } else if (s.edit >= 0) {
+      const k = s.edit;
+      s.edit = -1;
+      s.row = this.rowsFor(i).indexOf('mon:' + k);
+      this.audio.uiBack();
+    } else {
+      s.ready = true;
+      this.audio.uiConfirm();
+    }
+    this.renderSelect();
+  }
+
   canStart() {
     return this.slots.every((s) => s.device) && this.slots.some((s) => s.device !== 'cpu');
+  }
+
+  focusIndex(s, i) {
+    if (s.edit >= 0) return s.edit;
+    const key = this.rowsFor(i)[s.row] || '';
+    return key.startsWith('mon:') ? +key.slice(4) : 0;
   }
 
   renderSelect() {
@@ -207,28 +277,28 @@ export class Game {
       joined: !!s.device,
       cpu: s.device === 'cpu',
       deviceLabel: this.deviceLabel(s.device),
-      mon: s.mon,
       row: s.row,
       ready: s.ready,
+      edit: s.edit,
+      focus: this.focusIndex(s, i),
+      team: this.mode === 'TEAM' ? s.team : s.team.slice(0, 1),
       color: PLAYER_COLORS[i].css,
-      rows: SELECT_ROWS[i].map((key) => ({
-        key,
-        label: { mon: 'POKÉMON', mode: 'MODE', limit: 'LIMIT', cpu: 'CPU' }[key],
-        value: this.rowValue(key, s),
-      })),
+      rows: this.rowsFor(i).map((key) => ({ key, label: this.rowLabel(key), value: this.rowValue(key, s) })),
     }));
     const full = this.canStart();
     const allReady = full && this.slots.every((s) => s.ready);
+    const rules = this.mode === 'TEAM' ? 'TEAM BATTLE · 3v3' : `${this.mode} · ${this.rowValue('limit')}`;
     this.ui.renderSelect({
       slots,
+      mode: this.mode,
       cpuName: RULES.cpu[st.cpu],
-      rulesText: `${RULES.modes[st.mode]} · ${this.rowValue('limit')} · STAGE: OUTPOST`,
+      rulesText: `${rules} · STAGE: OUTPOST`,
       canStart: full && this.slots[0].ready,
       hint: !full
         ? 'Waiting for P2: press <b>A</b> on a second controller, or set <b>CPU</b> in P1\'s rules'
         : allReady ? 'GET READY…'
-          : this.mobile ? 'Tap <b>◀ ▶</b> to change, then <b>READY UP</b>'
-            : '<b>↑↓</b> choose · <b>←→</b> change · <b>A</b> ready up · <b>B</b> back',
+          : this.mobile ? 'Tap <b>◀ ▶</b> to change, tap a Pokémon to edit its moves, then <b>READY UP</b>'
+            : '<b>↑↓</b> choose · <b>←→</b> change · <b>A</b> on a Pokémon = edit moves · <b>A</b> on READY · <b>B</b> back',
     });
   }
 
@@ -242,7 +312,7 @@ export class Game {
         continue;
       }
       const s = this.slots[i];
-      const rows = SELECT_ROWS[i];
+      const rows = this.rowsFor(i);
       if (s.ready) {
         if (d.pressed.back) { s.ready = false; this.audio.uiBack(); this.renderSelect(); }
         continue;
@@ -251,8 +321,12 @@ export class Game {
       if (d.nav.down) { s.row = (s.row + 1) % rows.length; this.audio.ui(); this.renderSelect(); }
       if (d.nav.left) this.change(i, rows[s.row], -1);
       if (d.nav.right) this.change(i, rows[s.row], 1);
-      if (d.pressed.confirm || d.pressed.start) { s.ready = true; this.audio.uiConfirm(); this.renderSelect(); }
-      else if (d.pressed.back) this.leave(i);
+      if (d.pressed.start) { s.edit = -1; s.ready = true; this.audio.uiConfirm(); this.renderSelect(); }
+      else if (d.pressed.confirm) this.confirmRow(i);
+      else if (d.pressed.back) {
+        if (s.edit >= 0) this.confirmRow(i);
+        else this.leave(i);
+      }
     }
     if (this.canStart() && this.slots.every((s) => s.ready)) {
       this.startDelay = (this.startDelay ?? 0.6) - dt;
@@ -267,16 +341,16 @@ export class Game {
 
   updatePreviews(dt) {
     this.slots.forEach((s, i) => {
-      const key = s.device ? String(s.mon) : null;
+      const species = s.device ? s.team[this.focusIndex(s, i)].species : null;
       const p = this.previews[i];
-      if ((p && p.key) !== key) {
+      if ((p && p.key) !== species) {
         if (p) { this.scene.remove(p.model.root); p.model.dispose(); }
         this.previews[i] = null;
-        if (key) {
-          const model = new CreatureModel({ species: SPECIES_LIST[s.mon], colors: PLAYER_COLORS[i], label: `P${i + 1}` });
-          model.root.position.set(i === 0 ? -0.85 : 0.85, 0, 1);
+        if (species) {
+          const model = new CreatureModel({ species: SPECIES[species], colors: PLAYER_COLORS[i], label: `P${i + 1}` });
+          model.root.position.set(i === 0 ? -0.95 : 0.95, 0, 1);
           this.scene.add(model.root);
-          this.previews[i] = { key, model };
+          this.previews[i] = { key: species, model };
         }
       }
       const pv = this.previews[i];
@@ -299,31 +373,83 @@ export class Game {
     this.previews = [null, null];
   }
 
+  // ---------------------------------------------------------------- match setup
+
+  // Build both players. Each has a team (1 Pokémon outside team mode) of Fighters; only the
+  // active one is on stage and in this.fighters.
+  setupPlayers(demo) {
+    const st = this.settings;
+    this.players = [0, 1].map((i) => {
+      const slot = this.slots[i];
+      const device = demo ? 'cpu' : slot.device;
+      const isCpu = device === 'cpu';
+      const defs = demo ? [member(SPECIES_LIST[rand(SPECIES_LIST.length)].id)] : this.mode === 'TEAM' ? slot.team : slot.team.slice(0, 1);
+      const brain = isCpu ? new CpuBrain(demo ? 2 : st.cpu) : null;
+      const team = defs.map((m) => {
+        const f = new Fighter(this, i, SPECIES[m.species], PLAYER_COLORS[i], m.moves);
+        Object.assign(f, { device, isCpu, brain, stocks: this.mode === 'TEAM' && !demo ? 1 : st.stocks, benched: true });
+        f.model = new CreatureModel({ species: f.sp, colors: f.colors, label: `P${i + 1}` });
+        f.model.root.visible = false;
+        this.scene.add(f.model.root);
+        return f;
+      });
+      return { slot: i, device, isCpu, brain, team, active: 0, switchCd: 0, benchTick: 0 };
+    });
+  }
+
   startMatch(demo) {
     this.clearMatch();
     this.demo = demo;
-    const st = this.settings;
-    const picks = demo ? [0, 1].map(() => ({ mon: rand(SPECIES_LIST.length), device: 'cpu' })) : this.slots;
-    this.fighters = picks.map((s, i) => {
-      const f = new Fighter(this, i, SPECIES_LIST[s.mon], PLAYER_COLORS[i]);
-      f.stocks = st.stocks;
-      f.device = s.device;
-      f.isCpu = s.device === 'cpu';
-      if (f.isCpu) f.brain = new CpuBrain(demo ? 2 : st.cpu);
-      return f;
-    });
-    this.models = this.fighters.map((f) => {
-      const m = new CreatureModel({ species: f.sp, colors: f.colors, label: `P${f.slot + 1}` });
-      this.scene.add(m.root);
-      return m;
-    });
+    this.setupPlayers(demo);
     this.pending = [{}, {}];
+    if (this.teamMode) {
+      this.enterPreview();
+      return;
+    }
+    this.beginBattle([0, 0]);
+  }
+
+  // Team preview: both teams on show (moves hidden), each player secretly picks a lead.
+  enterPreview() {
+    this.state = 'preview';
+    this.picks = { picks: [null, null], timer: PREVIEW_TIME, needs: [true, true] };
+    this.players.forEach((p, i) => { if (p.isCpu) this.picks.picks[i] = this.cpuLead(i); });
+    this.ui.showPreview(this.players, this.picks, this.mobile);
+    this.touch.setVisible(false);
+  }
+
+  updatePreview(dt) {
+    const k = this.picks;
+    k.timer -= dt;
+    this.players.forEach((p, i) => {
+      if (p.isCpu || k.picks[i] !== null) return;
+      const idx = pickFromNav(this.input.get(p.device));
+      if (idx >= 0) { k.picks[i] = idx; this.audio.uiConfirm(); }
+    });
+    this.ui.updatePicks(k);
+    if (k.picks.every((x) => x !== null) || k.timer <= 0) {
+      this.beginBattle(k.picks.map((x) => x ?? 0));
+    }
+  }
+
+  beginBattle(leads) {
+    const st = this.settings;
+    this.players.forEach((p, i) => {
+      p.active = leads[i];
+      const f = p.team[p.active];
+      f.benched = false;
+      f.spawn(STAGE.spawns[i], 0);
+      f.facing = i === 0 ? 1 : -1;
+    });
+    this.fighters = this.players.map((p) => p.team[p.active]);
+    this.ui.hidePicks();
     this.timeLeft = st.minutes * 60;
     this.suddenDeath = false;
     this.timeScale = 1;
     this.hitstop = 0;
     this.acc = 0;
-    if (demo) {
+    this.kopick = null;
+    if (this.demo) {
       this.canAct = true;
       return;
     }
@@ -331,25 +457,201 @@ export class Game {
     this.countdown = 3.6;
     this.lastCount = null;
     this.canAct = false;
-    this.ui.buildHUD(this.fighters, st);
+    this.ui.buildHUD(this.players, st, this.teamMode);
     this.ui.show('hud');
     this.audio.setQuiet(false);
-    this.touch.setVisible(this.fighters.some((f) => f.device === 'touch'));
+    this.touch.setVisible(this.players.some((p) => p.device === 'touch'));
+    if (this.teamMode) {
+      const [a, b] = this.fighters;
+      this.ui.announce(`${a.sp.name.toUpperCase()} <small>vs</small> ${b.sp.name.toUpperCase()}`, 'matchup', 1500);
+    }
   }
 
   clearMatch() {
-    for (const m of this.models) {
-      this.scene.remove(m.root);
-      m.dispose();
+    for (const p of this.players) {
+      for (const f of p.team) {
+        this.scene.remove(f.model.root);
+        f.model.dispose();
+      }
     }
-    this.models = [];
+    this.players = [];
     for (const p of this.projectiles) this.removeProjectile(p);
     this.projectiles = [];
     this.fighters = [];
     for (const d of this.stage.drones) d.visible = false;
     this.effects.clear();
     this.removePreviews();
+    this.ui.hidePicks();
   }
+
+  // ---------------------------------------------------------------- switching (team mode)
+
+  aliveIndexes(p) {
+    return p.team.map((f, k) => (f.eliminated ? -1 : k)).filter((k) => k >= 0);
+  }
+
+  // Which team member a SWAP press should bring in (-1 = can't switch right now).
+  switchTargetFor(slot, idx, ignoreCooldown = false) {
+    if (!this.teamMode || this.state !== 'playing') return -1;
+    const p = this.players[slot];
+    if (p.switchCd > 0 && !ignoreCooldown) {
+      if (p.switchCd < SWITCH_COOLDOWN - 30) this.popup(slot, `SWITCH IN ${Math.ceil(p.switchCd / 60)}s`, 'bad');
+      return -1;
+    }
+    const ok = (k) => k !== p.active && p.team[k] && !p.team[k].eliminated;
+    if (idx >= 0 && ok(idx)) return idx;
+    for (let n = 1; n < p.team.length; n++) {
+      const k = (p.active + n) % p.team.length;
+      if (ok(k)) return k;
+    }
+    return -1;
+  }
+
+  performSwitch(slot, idx, free) {
+    const p = this.players[slot];
+    const out = p.team[p.active];
+    const inn = p.team[idx];
+    if (!inn || inn.eliminated || idx === p.active) {
+      out.toNeutral();
+      return false;
+    }
+    out.onSwitchOut();
+    out.model.root.visible = false;
+    inn.onSwitchIn(out);
+    p.active = idx;
+    this.fighters[slot] = inn;
+    p.switchCd = free ? 90 : SWITCH_COOLDOWN;
+    const c = inn.center;
+    this.effects.ring(c.x, c.y, inn.colors.main, 2.6, 0.4);
+    this.effects.ring(c.x, c.y, 0xffffff, 1.6, 0.3);
+    this.effects.sparks(c.x, c.y, 0, 0, inn.colors.main, 20, 8);
+    this.audio.switchIn(c.x);
+    this.effects.callout(c.x, inn.pos.y + inn.h + 0.7, `GO! ${inn.sp.name.toUpperCase()}!`, hexColor(inn.colors.css));
+    return true;
+  }
+
+  // Volt Switch: after it hits, switch to the next healthy teammate for free.
+  pivot(f) {
+    const target = this.switchTargetFor(f.slot, -1, true);
+    if (target < 0) return false;
+    return this.performSwitch(f.slot, target, true);
+  }
+
+  // Benched Pokémon slowly recover (1% a second), so rotating your team pays off.
+  benchHeal() {
+    for (const p of this.players) {
+      if (p.switchCd > 0) p.switchCd--;
+      if (++p.benchTick % 60 !== 0) continue;
+      p.team.forEach((f, k) => {
+        if (k !== p.active && !f.eliminated && f.percent > 0) f.percent = Math.max(0, f.percent - 1);
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------- hidden KO picks
+
+  queueKOPick(slot) {
+    if (!this.kopick) this.kopick = { needs: [false, false], picks: [null, null], timer: PICK_TIME };
+    this.kopick.needs[slot] = true;
+    this.state = 'kopick';
+    this.canAct = false;
+  }
+
+  startKOPick() {
+    const k = this.kopick;
+    this.players.forEach((p, i) => { if (p.isCpu) k.picks[i] = this.cpuPick(i, k.needs[i]); });
+    this.ui.showKOPick(this.players, k, this.mobile);
+    this.touch.setVisible(false);
+    this.kopickShown = true;
+  }
+
+  updateKOPick(dt) {
+    const k = this.kopick;
+    if (!this.kopickShown) this.startKOPick();
+    k.timer -= dt;
+    this.players.forEach((p, i) => {
+      if (p.isCpu || k.picks[i] !== null) return;
+      const d = this.input.get(p.device);
+      const idx = pickFromNav(d);
+      const alive = this.aliveIndexes(p);
+      if (idx >= 0 && alive.includes(idx)) { k.picks[i] = idx; this.audio.uiConfirm(); }
+      else if (!k.needs[i] && (d.pressed.confirm || d.nav.down)) { k.picks[i] = p.active; this.audio.uiConfirm(); }
+    });
+    this.ui.updatePicks(k);
+    if (k.picks.every((x) => x !== null) || k.timer <= 0) this.revealKOPicks();
+  }
+
+  revealKOPicks() {
+    const k = this.kopick;
+    this.kopick = null;
+    this.kopickShown = false;
+    this.players.forEach((p, i) => {
+      const alive = this.aliveIndexes(p);
+      let pick = k.picks[i];
+      if (pick === null || !alive.includes(pick)) pick = k.needs[i] ? alive[0] : p.active;
+      if (k.needs[i]) {
+        const f = p.team[pick];
+        p.active = pick;
+        f.benched = false;
+        f.respawn();
+        this.fighters[i] = f;
+      } else if (pick !== p.active) {
+        this.state = 'playing'; // performSwitch only works mid-battle
+        this.performSwitch(i, pick, true);
+      }
+    });
+    this.ui.hidePicks();
+    const [a, b] = this.fighters;
+    this.ui.announce(`${a.sp.name.toUpperCase()} <small>vs</small> ${b.sp.name.toUpperCase()}`, 'matchup', 1400);
+    this.audio.beep(true);
+    this.state = 'playing';
+    this.canAct = true;
+    this.touch.setVisible(this.players.some((p) => p.device === 'touch'));
+  }
+
+  // CPU lead: best average matchup into the opponent's team.
+  cpuLead(i) {
+    const me = this.players[i];
+    const foe = this.players[1 - i];
+    let best = 0;
+    let bestScore = -Infinity;
+    me.team.forEach((f, k) => {
+      const score = foe.team.reduce((sum, g) => sum + matchupScore(f.sp, this.slotMoves(f), g.sp), 0) + Math.random() * 0.5;
+      if (score > bestScore) { bestScore = score; best = k; }
+    });
+    return best;
+  }
+
+  // CPU KO pick: bring in the best answer to what's out (or switch if it's clearly better).
+  cpuPick(i, mustPick) {
+    const me = this.players[i];
+    const foe = this.players[1 - i];
+    const foes = this.aliveIndexes(foe).map((k) => foe.team[k]);
+    const threat = this.kopick && this.kopick.needs[1 - i] ? foes : [foe.team[foe.active]];
+    const score = (f) => threat.reduce((sum, g) => sum + matchupScore(f.sp, this.slotMoves(f), g.sp), 0) / threat.length;
+    let best = me.active;
+    let bestScore = mustPick ? -Infinity : score(me.team[me.active]) + 0.8; // staying in is the default
+    for (const k of this.aliveIndexes(me)) {
+      if (k === me.active && mustPick) continue;
+      const sc = score(me.team[k]) + Math.random() * 0.3;
+      if (sc > bestScore) { bestScore = sc; best = k; }
+    }
+    return best;
+  }
+
+  // CPU mid-fight switch: only when a teammate has a clearly better matchup into the foe.
+  cpuSwitchChoice(slot) {
+    const p = this.players[slot];
+    if (!this.teamMode || p.switchCd > 0 || this.state !== 'playing') return -1;
+    const pick = this.cpuPick(slot, false);
+    return pick !== p.active ? pick : -1;
+  }
+
+  slotMoves(f) {
+    return Object.fromEntries(Object.entries(f.moveset.specials).map(([k, m]) => [k, m.id]));
+  }
+
+  // ---------------------------------------------------------------- input routing
 
   handleAction(a) {
     const s = this.state;
@@ -361,15 +663,29 @@ export class Game {
       this.audio.unlock();
       this.goSelect(this.mobile ? 'touch' : null);
     } else if (s === 'select') {
+      const sl = this.slots[a.slot];
       if (a.type === 'join' && this.mobile) this.join('touch');
-      else if (a.type === 'change') this.change(a.slot, a.row, a.dir);
-      else if (a.type === 'ready') {
-        const sl = this.slots[a.slot];
-        if (sl.device && sl.device !== 'cpu') { sl.ready = !sl.ready; this.audio.uiConfirm(); this.renderSelect(); }
+      else if (a.type === 'change') {
+        sl.row = this.rowsFor(a.slot).indexOf(a.row);
+        this.change(a.slot, a.row, a.dir);
+      } else if (a.type === 'edit' && sl && !sl.ready && sl.device !== 'cpu') {
+        sl.row = this.rowsFor(a.slot).indexOf(a.row);
+        this.confirmRow(a.slot);
+      } else if (a.type === 'ready') {
+        if (sl.device && sl.device !== 'cpu') { sl.edit = -1; sl.ready = !sl.ready; this.audio.uiConfirm(); this.renderSelect(); }
       } else if (a.type === 'leave') this.leave(a.slot);
       else if (a.type === 'start' && this.canStart()) {
-        for (const sl of this.slots) sl.ready = true;
+        for (const x of this.slots) { x.ready = true; x.edit = -1; }
         this.startMatch(false);
+      }
+    } else if ((s === 'preview' || s === 'kopick') && a.type === 'pick') {
+      const k = s === 'preview' ? this.picks : this.kopick;
+      const p = this.players[a.slot];
+      const idx = +a.row;
+      if (k && p && !p.isCpu && k.picks[a.slot] === null && this.aliveIndexes(p).includes(idx)) {
+        if (s === 'kopick' && k.needs[a.slot] && idx === p.active) return;
+        k.picks[a.slot] = idx;
+        this.audio.uiConfirm();
       }
     } else if (s === 'paused') {
       if (a.type === 'resume') this.setPaused(false);
@@ -381,7 +697,7 @@ export class Game {
   }
 
   humanDevices() {
-    return this.fighters.filter((f) => !f.isCpu && f.device).map((f) => this.input.get(f.device));
+    return this.players.filter((p) => !p.isCpu && p.device).map((p) => this.input.get(p.device));
   }
 
   setPaused(p) {
@@ -392,7 +708,7 @@ export class Game {
       this.state = this.pausedFrom || 'playing';
     }
     this.ui.showPause(p);
-    this.touch.setVisible(!p && this.fighters.some((f) => f.device === 'touch'));
+    this.touch.setVisible(!p && this.players.some((x) => x.device === 'touch'));
     this.audio.ui();
   }
 
@@ -422,6 +738,9 @@ export class Game {
         this.updateSelect(dt);
         if (this.state === 'select') this.updatePreviews(dt);
         break;
+      case 'preview':
+        this.updatePreview(dt);
+        break;
       case 'countdown': {
         this.countdown -= dt;
         const n = Math.ceil(this.countdown);
@@ -446,6 +765,10 @@ export class Game {
         if (devs().some((d) => d.pressed.start)) this.setPaused(true);
         else this.simulate(dt);
         break;
+      case 'kopick':
+        this.updateKOPick(dt);
+        this.updateVisuals(dt);
+        break;
       case 'paused': {
         const ds = devs();
         if (ds.some((d) => d.pressed.start)) this.setPaused(false);
@@ -460,7 +783,7 @@ export class Game {
         if (this.gameoverTimer <= 0) {
           this.state = 'results';
           this.touch.setVisible(false);
-          this.ui.showResults(this.winner, this.fighters);
+          this.ui.showResults(this.winner, this.resultSummaries());
         }
         break;
       case 'results': {
@@ -483,9 +806,9 @@ export class Game {
   simulate(dt) {
     // Collect button presses since the last sim step so none are lost or doubled
     // when the display refresh rate differs from the 60 Hz simulation.
-    this.fighters.forEach((f, i) => {
-      if (f.isCpu || !f.device) return;
-      const d = this.input.get(f.device);
+    this.players.forEach((p, i) => {
+      if (p.isCpu || !p.device) return;
+      const d = this.input.get(p.device);
       for (const b of BUTTONS) if (d.pressed[b]) this.pending[i][b] = true;
     });
     this.acc += dt * this.timeScale;
@@ -494,6 +817,7 @@ export class Game {
       this.step();
       this.acc -= SIM_DT;
       steps++;
+      if (this.state === 'kopick') { this.acc = 0; break; } // a KO paused the battle for picks
     }
     if (steps === 5) this.acc = 0;
     this.updateVisuals(dt * this.timeScale);
@@ -515,13 +839,15 @@ export class Game {
     }
     this.fighters.forEach((f, i) => {
       f.update(SIM_DT, this.inputFor(f, i));
-      if (f.active && f.state === 'hitstun' && Math.hypot(f.vel.x, f.vel.y) > 13 && Math.round(this.time * 60) % 2 === 0) {
-        this.effects.trail(f.pos.x, f.pos.y + f.h * 0.5, f.colors.main);
+      const cur = this.fighters[i]; // may have switched this frame
+      if (cur.active && cur.state === 'hitstun' && Math.hypot(cur.vel.x, cur.vel.y) > 13 && Math.round(this.time * 60) % 2 === 0) {
+        this.effects.trail(cur.pos.x, cur.pos.y + cur.h * 0.5, cur.colors.main);
       }
     });
     this.resolveHits();
     this.updateProjectiles(SIM_DT);
-    if (this.state === 'playing' && this.settings.mode === 1 && !this.suddenDeath && !this.demo) {
+    if (this.teamMode) this.benchHeal();
+    if (this.state === 'playing' && this.mode === 'TIME' && !this.suddenDeath && !this.demo) {
       this.timeLeft -= SIM_DT;
       if (this.timeLeft <= 0) this.timeUp();
     }
@@ -841,12 +1167,20 @@ export class Game {
       this.ui.popup(f.slot, 'SELF-DESTRUCT', 'bad');
     }
 
-    if (this.settings.mode === 0 || this.suddenDeath) {
+    if (this.teamMode) {
+      // Each Pokémon is one stock: it faints, then both players make hidden picks.
+      f.stocks = 0;
+      f.eliminated = true;
+      this.popup(f.slot, `${f.sp.name.toUpperCase()} FAINTED`, 'bad');
+      const out = this.players.map((p) => this.aliveIndexes(p).length === 0);
+      if (out[0] || out[1]) this.endMatch(out[0] && out[1] ? null : out[0] ? 1 : 0);
+      else if (this.state !== 'gameover') this.queueKOPick(f.slot);
+    } else if (this.mode === 'STOCK' || this.suddenDeath) {
       f.stocks--;
       if (f.stocks <= 0) {
         f.eliminated = true;
         const alive = this.fighters.filter((x) => !x.eliminated);
-        if (alive.length <= 1) this.endMatch(alive[0] || null);
+        if (alive.length <= 1) this.endMatch(alive[0] ? alive[0].slot : null);
       }
     }
 
@@ -866,7 +1200,7 @@ export class Game {
     const best = Math.max(...this.fighters.map(score));
     const leaders = this.fighters.filter((f) => score(f) === best);
     if (leaders.length === 1) {
-      this.endMatch(leaders[0]);
+      this.endMatch(leaders[0].slot);
       return;
     }
     this.suddenDeath = true;
@@ -880,13 +1214,29 @@ export class Game {
     this.audio.say('Sudden death');
   }
 
+  // winner: the winning player's slot, or null for a draw.
   endMatch(winner) {
     this.state = 'gameover';
+    this.kopick = null;
+    this.ui.hidePicks();
     this.winner = winner;
     this.gameoverTimer = 2.6;
     this.canAct = false;
     this.ui.announce('GAME!', 'game', 2400);
     this.audio.say('Game!');
+  }
+
+  // Per-player totals across the whole team for the results screen.
+  resultSummaries() {
+    return this.players.map((p) => {
+      const stats = { kos: 0, falls: 0, sds: 0, damageDealt: 0, hits: 0 };
+      for (const f of p.team) for (const k of Object.keys(stats)) stats[k] += f.stats[k];
+      return {
+        slot: p.slot, colors: p.team[0].colors, stats,
+        label: p.team.map((f) => f.sp.name.toUpperCase()).join(' · '),
+        team: p.team.map((f) => ({ name: f.sp.name, fainted: f.eliminated })),
+      };
+    });
   }
 
   // ------------------------------------------------------------ visuals
@@ -907,8 +1257,9 @@ export class Game {
   }
 
   updateVisuals(dt) {
+    for (const p of this.players) for (const f of p.team) if (f !== this.fighters[p.slot]) f.model.root.visible = false;
     this.fighters.forEach((f, i) => {
-      const m = this.models[i];
+      const m = f.model;
       m.root.visible = f.active;
       if (f.active) {
         m.root.position.set(f.pos.x, f.pos.y, 0);
@@ -936,7 +1287,7 @@ export class Game {
       if (pr.p.visual === 'flame') pr.mesh.scale.setScalar(0.7 + (1 - pr.life / pr.p.life) * 1.2);
     }
     this.effects.update(dt);
-    if (!this.demo && this.fighters.length) this.ui.updateHUD(this.fighters, this.settings, this.timeLeft);
+    if (!this.demo && this.fighters.length) this.ui.updateHUD(this.players, this.settings, this.timeLeft, this.teamMode);
   }
 
   updateCamera(dt) {

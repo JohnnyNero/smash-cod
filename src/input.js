@@ -113,13 +113,13 @@ export class InputManager {
       const cx = pad.axes[2] || 0;
       const cy = -(pad.axes[3] || 0);
       const cmag = Math.hypot(cx, cy);
-      // Standard mapping: A attack, B special, X/Y jump, LB grab, RB/LT/RT shield, Select swap.
+      // Standard mapping: A attack, B special, X jump, Y swap, LB grab, RB/LT/RT shield.
       const raw = {
         moveX: mx, moveY: my,
         smashX: cmag > 0.7 ? cx / cmag : 0, smashY: cmag > 0.7 ? cy / cmag : 0,
         held: {
-          attack: btn(0), special: btn(1), jump: btn(2) || btn(3), grab: btn(4),
-          shield: btn(5) || btn(6) || btn(7), smash: cmag > 0.7, swap: btn(8),
+          attack: btn(0), special: btn(1), jump: btn(2), swap: btn(3) || btn(8), grab: btn(4),
+          shield: btn(5) || btn(6) || btn(7), smash: cmag > 0.7,
           start: btn(9), confirm: btn(0), back: btn(1), down: my < -0.6,
         },
       };

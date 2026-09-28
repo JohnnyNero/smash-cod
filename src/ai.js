@@ -129,6 +129,14 @@ export class CpuBrain {
             mx = Math.sign(dx);
             tap('attack');
           }
+        } else if (me.grounded && adx > 5 && Math.random() < 0.06 && me.game.cpuSwitchChoice) {
+          // Bad matchup? Switch to a better answer from a safe distance (Showdown-style).
+          const pick = me.game.cpuSwitchChoice(me.slot);
+          if (pick >= 0) {
+            mx = pick === 0 ? -1 : pick === 2 ? 1 : 0;
+            my = pick === 1 ? 1 : 0;
+            tap('swap');
+          }
         } else if (me.grounded && dy > 2.2 && adx < 3 && Math.random() < 0.5) {
           tap('jump');
         } else if (me.grounded && me.platform !== 'main' && dy < -1.5 && Math.random() < 0.5) {

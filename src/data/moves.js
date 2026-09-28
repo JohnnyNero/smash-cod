@@ -80,7 +80,7 @@ export const SPECIALS = {
     events: [{ f: 12, do: 'projectile', proj: { speed: 13, life: 1.1, r: 0.3, dmg: 7, kb: 3, grow: 0.06, kbAng: 40, visual: 'bolt', color: 0xffe040 } }],
   },
   voltswitch: {
-    anim: 'ball', total: 40, landLag: 12,
+    anim: 'ball', total: 40, landLag: 12, pivot: true, // switches you out after it hits (team mode)
     events: [{ f: 5, do: 'dash', speed: 15, frames: 14, air: { y: 3 } }],
     hitboxes: [hb([6, 18], 0.2, 0.5, 0.55, 9, 5, 0.08, 45)],
   },

@@ -346,3 +346,63 @@ b { color: var(--gold); }
   .killfeed { top: auto; bottom: calc(10px + var(--safe-b)); right: 50%; transform: translateX(50%); align-items: center; }
   .timer { top: calc(52px + env(safe-area-inset-top, 0px)); font-size: 24px; }
 }
+
+/* ---------------------------------------------------------------- team builder */
+.team-line { display: flex; gap: 4px; margin: 6px 0 2px; }
+.team-line span { flex: 1; text-align: center; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; padding: 2px 0; background: rgba(255, 255, 255, 0.06); color: var(--dim); }
+.team-line span.on { background: var(--pc); color: #fff; }
+.row .mini-types, .row .mv-meta { grid-column: 1 / -1; justify-self: end; font-size: 9px; color: var(--dim); letter-spacing: 0.05em; margin-top: -2px; }
+.row .mini-types .type { font-size: 8px; padding: 0 4px; }
+.val-btn { font-weight: 700; letter-spacing: 0.08em; text-decoration: underline dotted rgba(255, 255, 255, 0.35); text-underline-offset: 3px; }
+.editing { margin: 8px 0 4px; font-size: 11px; letter-spacing: 0.1em; color: var(--gold); font-weight: 700; }
+
+/* ---------------------------------------------------------------- HUD team strip */
+.hud-card { grid-template-columns: auto auto auto; grid-template-rows: auto auto; }
+.team-strip { grid-column: 1 / -1; display: flex; gap: 4px; margin-top: 2px; }
+.team-strip span {
+  flex: 1; display: flex; gap: 4px; align-items: center; font-size: 9px; font-weight: 700; letter-spacing: 0.05em;
+  padding: 1px 5px; background: rgba(255, 255, 255, 0.06); white-space: nowrap;
+}
+.team-strip span i { font-style: normal; color: var(--dim); }
+.team-strip span b { margin-left: auto; color: var(--ink); }
+.team-strip span.active { background: color-mix(in srgb, var(--pc) 55%, transparent); }
+.team-strip span.fainted { opacity: 0.35; text-decoration: line-through; }
+
+/* ---------------------------------------------------------------- preview / KO picks */
+.picks { display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(6, 8, 18, 0.72); pointer-events: auto; z-index: 5; }
+.pick-panel { width: min(920px, 100%); text-align: center; }
+.pick-panel h2 { margin: 0; font-size: clamp(32px, 6vw, 60px); text-shadow: 0 4px 0 #000; color: var(--gold); }
+.pick-sub { color: var(--dim); font-size: 13px; margin: 6px 0 14px; }
+.pick-cols { display: flex; align-items: center; justify-content: center; gap: 16px; }
+.pick-vs { font-family: 'Black Ops One', sans-serif; font-size: 28px; color: var(--dim); }
+.pick-col { flex: 1; max-width: 380px; background: var(--panel); border-top: 4px solid var(--pc); padding: 10px 12px; }
+.pick-head { font-family: 'Black Ops One', sans-serif; font-size: 24px; color: var(--pc); text-align: left; }
+.pick-head small { display: block; font-family: 'Chakra Petch', sans-serif; font-size: 11px; letter-spacing: 0.12em; color: var(--dim); }
+.pick-mons { display: grid; gap: 6px; margin: 8px 0; }
+.pick-mon {
+  display: grid; grid-template-columns: 26px 1fr auto; grid-template-rows: auto auto; align-items: center; column-gap: 8px;
+  text-align: left; padding: 7px 10px; background: rgba(255, 255, 255, 0.06); border-left: 3px solid var(--pc);
+}
+.pick-mon i { grid-row: 1 / span 2; font-style: normal; font-size: 18px; color: var(--gold); }
+.pick-mon .nm { font-weight: 700; letter-spacing: 0.08em; }
+.pick-mon .tp { grid-column: 2; }
+.pick-mon .pc { grid-column: 3; grid-row: 1 / span 2; font-weight: 700; font-size: 13px; }
+.pick-mon.fainted { opacity: 0.3; pointer-events: none; }
+.pick-mon.in { outline: 1px dashed rgba(255, 255, 255, 0.4); }
+.pick-lock { font-weight: 700; letter-spacing: 0.15em; color: var(--dim); animation: pulse 1.2s infinite; }
+.pick-lock.locked { color: #7ae07a; animation: none; }
+.pick-timer { height: 4px; background: rgba(255, 255, 255, 0.1); margin-top: 14px; }
+.pick-timer i { display: block; height: 100%; background: var(--gold); transition: width 0.1s linear; }
+.t-swap { position: absolute; right: calc(236px + var(--safe-r)); bottom: calc(18px + var(--safe-b)); width: 60px; }
+@media (max-height: 520px) {
+  .pick-panel h2 { font-size: 28px; }
+  .pick-sub { display: none; }
+  .pick-mon { padding: 4px 8px; }
+  .team-strip span { font-size: 8px; }
+  .row .mini-types, .row .mv-meta { display: none; }
+}
+
+.announce.matchup { font-size: clamp(26px, 5vw, 64px); color: #fff; }
+.announce.matchup small { font-size: 0.5em; color: var(--gold); margin: 0 0.3em; }
+.stats { grid-template-columns: 1fr 1fr; column-gap: 12px; }
+.select .card { max-height: calc(100vh - 110px); }
