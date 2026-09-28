@@ -1,10 +1,13 @@
-# SMASH OPS
+# SHOWDOWN SMASH
 
-A 1v1 couch platform fighter: **Super Smash Bros. rules with Call of Duty loadouts**, in 3D, in the browser.
+A 1v1 couch platform fighter: **Pokémon Showdown strategy decides who is favoured, Super Smash Bros.
+execution decides who wins.** It's 3D and runs in the browser, with gamepads, keyboard or touch.
 
-Damage % goes up as you get hit, and the higher it is, the further you fly. You win by knocking the other
-player off the map. Your gun is your moveset: recoil moves you (shotgun the floor to rocket-jump back),
-reloading leaves you open, and aiming down sights charges a heavier shot.
+The full design and roadmap live in [`docs/DESIGN.md`](docs/DESIGN.md).
+
+**Status: phase 1 of 4 (moveset engine).** Pikachu is playable end to end: Smash normals, 4 specials
+with real Showdown PP, shield, dodges, grabs and throws, ledges, a CPU and touch controls.
+All 6 Pokémon, the type chart, the team builder, switching and the KO picks come in the next phases.
 
 ## Play
 
@@ -13,48 +16,32 @@ npm install
 npm run dev
 ```
 
-Open the URL it prints. `--host` is on, so a phone or tablet on the same Wi-Fi can open the
-`Network:` URL too.
+Open the URL it prints. Phones on the same Wi-Fi can open the `Network:` URL. Every push to the
+working branch also deploys to GitHub Pages.
 
-- **Couch 1v1:** plug in two controllers (Xbox/PlayStation) and press **A** on each to join.
-- **Solo / phone:** set **CPU** in P1's rules (it's on by default on phones).
-- Phones play in landscape with on-screen controls.
-
-To host it for free, enable **Settings → Pages → Source: GitHub Actions** on the repo. Every push to
-`main` then deploys it (see `.github/workflows/pages.yml`).
+- **Couch 1v1:** plug in two controllers and press **A** on each to join.
+- **Solo / phone:** set **CPU** in P1's rules (it's on by default on phones). Phones play in landscape.
 
 ## Controls
 
 | Action | Gamepad | Keyboard P1 | Keyboard P2 | Touch |
 |---|---|---|---|---|
-| Move | L-stick / D-pad | A / D | ← / → | left thumb stick |
-| Aim | R-stick (360°) | W / S tilt aim | ↑ / ↓ tilt aim | right thumb stick |
-| Jump (double jump in air) | A | W or Space | ↑ | JUMP |
-| Fire | RT | F | / | push aim stick to the rim |
-| Aim down sights | LT | V | Right Shift | light pull on aim stick |
-| Knife | X | G | . | KNIFE |
-| Frag grenade | RB | H | , | FRAG |
-| Exo boost (once per jump) | B | C | ; | EXO |
-| Operator ability | LB | T | ' | SHIELD / DASH |
-| Reload | Y | R | P | automatic |
-| Drop through platform / fast fall | ↓ | S | ↓ | pull move stick down |
+| Move | L-stick / D-pad | WASD | Arrows | left thumb |
+| Jump (tap for short hop) | X / Y | Space | ' | JUMP |
+| Attack (+ direction = tilts / aerials) | A | F | / | ATTACK |
+| Smash attack (hold to charge) | R-stick, or tap direction + A | tap direction + F | tap direction + / | flick + ATTACK |
+| Special (+ direction = your 4 moves) | B | G | . | SPECIAL |
+| Shield (+ flick = roll / spot dodge; air = air dodge) | RB / LT / RT | H | , | SHIELD |
+| Grab (then direction = throw, attack = pummel) | LB, or shield + A | R | ; | GRAB |
+| Drop through platform / fast fall | flick down | S | ↓ | flick down |
 | Pause | Start | Esc | Enter | II |
 
-**Tech:** tap exo boost just before you slam into the ground while launched to cancel the bounce.
-
-## What's in v0.1
-
-- **Operators:** **Brick**, heavy with a riot shield, and **Vex**, light with a triple jump and a phase dash.
-- **Primaries:**
-  - **SMG:** pins and pushes.
-  - **Shotgun:** big launch, rocket-jumps.
-  - **Sniper:** hold ADS for a charged KO shot.
-- **Loadout:** knife, 2 frag grenades (they recharge), and an exo boost.
-- **Modes:** Stock (1–5 lives) or Time (1–5 minutes, with sudden death on a tie).
-- **CPU:** easy, normal or hard. The title screen runs a CPU-vs-CPU attract mode.
-- **Feel:** hitmarkers, hitstop, screen shake, controller rumble, KO blasts, a killfeed, and an announcer
-  voice (your browser's speech synthesis).
-- **No asset files:** every model, animation and sound is generated in code.
+- **Ledges:** fall near the edge to grab it. Then **up** climbs, **jump** jumps, **attack** does a
+  getup attack, **shield** rolls in, and **down** lets go.
+- **Tech:** tap shield just before you slam into the ground to recover instantly.
+- **PP:** each special has limited uses per stock, shown on both players' HUD. At 0 PP the move
+  becomes **Struggle**: weak, typeless, and a little self-damage. Up-special still gets you back to
+  the stage.
 
 Add `?quality=low` to the URL on a slow machine. Phones use it automatically.
 
@@ -62,14 +49,17 @@ Add `?quality=low` to the URL on a slow machine. Phones use it automatically.
 
 | File | What it does |
 |---|---|
-| `src/config.js` | Every tunable number: weapons, operators, physics, stage |
-| `src/fighter.js` | Movement, knockback and loadout logic (no rendering) |
-| `src/game.js` | Match flow, bullets, grenades, KOs, camera, menus |
-| `src/models/soldier.js` | Procedural 3D soldier and its animations |
-| `src/stage.js` | The Outpost stage |
-| `src/effects.js` | Particles, explosions, KO blasts |
+| `docs/DESIGN.md` | Design doc: decisions, pillars, roadmap |
+| `src/config.js` | Engine tunables: physics, combat, shield, dodges, ledges, stage |
+| `src/data/pokemon.js` | Species: Showdown base stats and types, and how they map to fighter stats |
+| `src/data/moves.js` | Normals, specials (type/power/PP), throws; frame data and hitboxes |
+| `src/damage.js` | Showdown-style damage: Atk/SpA vs Def/SpD, STAB (type chart in phase 2) |
+| `src/fighter.js` | Fighter state machine (no rendering) |
+| `src/game.js` | Match flow, hit resolution, projectiles, grabs, KOs, camera, menus |
+| `src/models/creature.js` | Creature rig and code-driven animation |
+| `src/models/species.js` | Per-species low-poly model builders (Pikachu so far) |
 | `src/ai.js` | CPU opponent |
-| `src/input.js` | Gamepads and keyboard |
-| `src/touch.js` | Touch controls |
+| `src/input.js`, `src/touch.js` | Gamepads, keyboard, touch |
 | `src/audio.js` | Synthesized sounds |
-| `src/ui.js` | Menus and HUD |
+| `src/ui.js`, `src/style.css` | Menus and HUD |
+| `src/stage.js`, `src/effects.js` | Stage visuals, particles, KO blasts |

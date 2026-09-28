@@ -4,126 +4,160 @@ import { STAGE } from './config.js';
 import { neutralState, BUTTONS } from './input.js';
 
 const LEVELS = {
-  1: { react: 0.38, aimErr: 0.32, aggression: 0.45, recover: 0.7 },
-  2: { react: 0.22, aimErr: 0.16, aggression: 0.7, recover: 0.9 },
-  3: { react: 0.1, aimErr: 0.06, aggression: 0.9, recover: 1 },
+  1: { react: 0.4, aggression: 0.35, shield: 0.15, recover: 0.75, precision: 0.5 },
+  2: { react: 0.24, aggression: 0.6, shield: 0.3, recover: 0.92, precision: 0.75 },
+  3: { react: 0.12, aggression: 0.85, shield: 0.45, recover: 1, precision: 0.95 },
 };
-const RANGE = { smg: 5.5, shotgun: 2.4, sniper: 10 };
 
 export class CpuBrain {
   constructor(level = 2) {
     this.cfg = LEVELS[level] || LEVELS[2];
     this.state = neutralState('cpu');
-    this.want = {};
     this.think = 0;
-    this.moveIntent = 0;
-    this.errPhase = Math.random() * 10;
-    this.adsHold = 0;
+    this.intent = 0;
     this.shieldHold = 0;
-    this.nadeTimer = 3 + Math.random() * 4;
-    this.giveUp = Math.random() > this.cfg.recover;
+    this.ledgeWait = 0;
+    this.giveUp = false;
+    this.projTimer = 1 + Math.random() * 2;
   }
 
-  tap(b) { this.want[b] = !this.state.held[b]; }
-
   update(me, foe, dt) {
-    const s = this.state;
     const c = this.cfg;
-    const want = (this.want = {});
+    const want = {};
     let mx = 0;
     let my = 0;
-    let ax = 0;
-    let ay = 0;
-    let aimActive = false;
-    this.errPhase += dt;
+    let smash = null;
+    const tap = (b) => { want[b] = !this.state.held[b]; };
     this.think -= dt;
-    this.nadeTimer -= dt;
+    this.projTimer -= dt;
     const S = STAGE.main;
+    const toCenter = -Math.sign(me.pos.x) || 1;
 
     if (!me.active || me.onRevival) {
-      if (me.onRevival && me.revivalTimer > 1 + Math.random()) mx = -Math.sign(me.pos.x) || 1;
-    } else {
-      const offstage = !me.grounded && (me.pos.x < S.left - 0.1 || me.pos.x > S.right + 0.1 || me.pos.y < S.top - 0.2);
-      const toCenter = -Math.sign(me.pos.x) || 1;
-      if (me.hitstun > 0) {
-        mx = toCenter;
-        if (me.pos.y < -2 && Math.random() < 0.3) this.tap('exo'); // try to tech / buffer
-      } else if (offstage) {
-        if (me.grounded === false && me.pos.y > 0.5 && Math.abs(me.pos.x) < S.right + 3 && Math.random() < 0.9) {
-          mx = toCenter;
-        } else if (!this.giveUp) {
-          mx = toCenter;
-          if (me.vel.y < 2 && me.airJumps > 0) this.tap('jump');
-          else if (me.vel.y < 0 && me.exoReady) { my = 0.75; this.tap('exo'); }
-          else if (me.op.ability.id === 'dash' && me.dashCooldown <= 0 && me.vel.y < 0) { my = 0.8; this.tap('ability'); }
-          else if (me.weapon.id === 'shotgun' && me.ammo > 0 && me.vel.y < 0) {
-            aimActive = true;
-            ax = -toCenter * 0.35;
-            ay = -1;
-            this.tap('fire');
-          }
-        }
-      } else if (foe && foe.active && !foe.onRevival) {
-        const fc = foe.center;
-        const dx = fc.x - me.pos.x;
-        const dy = fc.y - (me.pos.y + me.h * 0.77);
-        const dist = Math.hypot(dx, dy);
-        const range = RANGE[me.weapon.id];
-
-        if (this.think <= 0) {
-          this.think = c.react * (0.7 + Math.random() * 0.6);
-          const adx = Math.abs(dx);
-          if (adx > range + 1) this.moveIntent = Math.sign(dx);
-          else if (adx < range - 2 && me.weapon.id !== 'shotgun') this.moveIntent = -Math.sign(dx);
-          else this.moveIntent = Math.random() < 0.3 ? (Math.random() < 0.5 ? -1 : 1) : 0;
-          if (me.grounded && dy > 2.2 && Math.random() < 0.6) this.tap('jump');
-          if (me.grounded && me.platform !== 'main' && dy < -1.5 && Math.random() < 0.5) this.dropNext = true;
-          if (Math.random() < 0.05 * c.aggression) this.tap('jump');
-          if (me.op.ability.id === 'shield' && foe.muzzle > -0.2 && adx > 3 && Math.random() < 0.4) this.shieldHold = 0.7;
-          if (me.op.ability.id === 'dash' && me.dashCooldown <= 0 && foe.muzzle > -0.1 && Math.random() < 0.25 * c.aggression) {
-            this.tap('ability');
-          }
-        }
-        mx = this.moveIntent;
-        // Don't run off the edge on purpose.
-        if (me.grounded && ((mx < 0 && me.pos.x < S.left + 1.2) || (mx > 0 && me.pos.x > S.right - 1.2))) mx = 0;
-        if (this.dropNext) { my = -1; this.dropNext = false; }
-
-        const err = Math.sin(this.errPhase * 2.3) * c.aimErr + Math.sin(this.errPhase * 5.1) * c.aimErr * 0.5;
-        const ang = Math.atan2(dy, dx) + err;
-        aimActive = true;
-        ax = Math.cos(ang);
-        ay = Math.sin(ang);
-
-        if (this.shieldHold > 0) {
-          this.shieldHold -= dt;
-          want.ability = true;
-        } else if (dist < 1.6 && Math.random() < 0.12 * c.aggression) {
-          this.tap('knife');
-        } else if (me.weapon.id === 'smg') {
-          if (dist < 9) want.fire = true;
-        } else if (me.weapon.id === 'shotgun') {
-          if (dist < 4.2 && me.fireCooldown <= 0) this.tap('fire');
-        } else if (dist < 22) {
-          want.ads = true;
-          this.adsHold += dt;
-          if (me.adsTime >= me.weapon.adsTime && Math.random() < 0.25) this.tap('fire');
-        }
-        if (this.nadeTimer <= 0 && dist > 3 && dist < 11) {
-          this.nadeTimer = 5 + Math.random() * 5;
-          ay += 0.5;
-          this.tap('grenade');
-        }
-        if (me.ammo === 0 && me.reloadTimer <= 0) this.tap('reload');
+      if (me.onRevival && me.revivalTimer > 1 + Math.random()) mx = toCenter;
+    } else if (me.state === 'hitstun') {
+      mx = toCenter; // DI toward the stage
+      if (me.vel.y < -8 && me.pos.y < 1.5 && Math.random() < c.precision * 0.3) tap('shield'); // tech attempt
+    } else if (me.state === 'held') {
+      if (Math.random() < 0.5) tap(['attack', 'jump', 'special'][Math.floor(Math.random() * 3)]);
+      mx = Math.random() < 0.5 ? 1 : -1;
+    } else if (me.state === 'holding') {
+      // Throw toward the nearer blast zone.
+      const out = Math.sign(me.pos.x) || 1;
+      mx = Math.abs(me.pos.x) > 3 ? out : me.facing;
+      if (foe && foe.percent > 90 && Math.random() < 0.5) { mx = 0; my = 1; }
+    } else if (me.state === 'ledge') {
+      this.ledgeWait -= dt;
+      if (this.ledgeWait <= 0) {
+        this.ledgeWait = 0.3 + Math.random() * 0.6;
+        const r = Math.random();
+        if (r < 0.4) my = 1;
+        else if (r < 0.65) tap('jump');
+        else if (r < 0.85) tap('attack');
+        else tap('shield');
       }
-      if (me.grounded) this.giveUp = Math.random() > c.recover;
-    }
+    } else if (!me.grounded && (me.pos.x < S.left - 0.2 || me.pos.x > S.right + 0.2 || me.pos.y < S.top - 0.3)) {
+      // Recovery: aim for the ledge. From under the stage, drift out first so we don't
+      // zip into its underside.
+      this.shieldHold = 0;
+      if (!this.giveUp) {
+        const side = Math.sign(me.pos.x) || 1;
+        const edgeX = side * S.right;
+        // Overlapping the stage horizontally while below it = going up would bonk the underside.
+        const under = Math.abs(me.pos.x) - me.w / 2 < S.right - 0.02 && me.pos.y < S.top - 0.3;
+        const tx = under ? edgeX + side * 1.4 : edgeX - side * 0.4;
+        const ty = S.top + 0.6;
+        const vx = tx - me.pos.x;
+        const vy = ty - me.pos.y;
+        mx = under ? side : Math.sign(vx);
+        if (me.state === 'attack' && this.recoverStick) {
+          ({ mx, my } = this.recoverStick); // keep holding the up-special direction
+        } else if (me.state === 'air' && me.vel.y < 1) {
+          if (under) {
+            // Below the lip: drift out first; only cut it close with a diagonal up-special if
+            // we're about to run out of height.
+            if (me.pos.y < -7) {
+              mx = side * 0.6;
+              my = 0.8;
+              this.recoverStick = { mx, my };
+              tap('special');
+            }
+          } else if (me.airJumps > 0 && me.pos.y < 1.5) {
+            tap('jump');
+          } else if (me.pos.y < 0.3) {
+            // Up-special steeply upward, leaning toward the ledge.
+            mx = Math.sign(vx) * Math.min(0.8, Math.abs(vx) / 4);
+            my = 1;
+            this.recoverStick = { mx, my };
+            tap('special');
+          }
+        }
+      }
+    } else if (foe && foe.active && !foe.onRevival) {
+      const dx = foe.pos.x - me.pos.x;
+      const dy = foe.pos.y - me.pos.y;
+      const adx = Math.abs(dx);
+      const dist = Math.hypot(dx, dy);
+      const facingFoe = Math.sign(dx) === me.facing;
+      const foeAttacking = foe.state === 'attack' && foe.move && foe.move.hitboxes;
 
+      if (!me.grounded) this.shieldHold = 0; // shield in the air is an air dodge; don't do it by accident
+      if (this.shieldHold > 0) {
+        this.shieldHold -= dt;
+        want.shield = true;
+        if (foe.state !== 'attack' && Math.random() < 0.3) tap('grab'); // shield grab
+      } else if (this.think <= 0) {
+        this.think = c.react * (0.7 + Math.random() * 0.6);
+        if (foeAttacking && dist < 2.4 && me.grounded && Math.random() < c.shield) {
+          this.shieldHold = 0.25 + Math.random() * 0.3;
+        } else if (me.grounded && adx < 1.2 && Math.abs(dy) < 0.8 && Math.random() < 0.25 * c.aggression) {
+          tap('grab');
+        } else if (adx < 1.7 && Math.abs(dy) < 1.4 && Math.random() < c.aggression) {
+          // Close range: pick an attack based on where the opponent is.
+          if (!facingFoe) mx = Math.sign(dx);
+          if (dy > 0.9) {
+            my = 1;
+            if (me.grounded && foe.percent > 80 && Math.random() < 0.5) smash = { x: 0, y: 1 };
+            else if (me.grounded) tap('attack');
+            else tap('attack');
+          } else if (me.grounded && foe.percent > 85 && Math.random() < 0.55) {
+            smash = { x: Math.sign(dx), y: 0 };
+          } else if (me.grounded) {
+            if (Math.random() < 0.4) mx = Math.sign(dx);
+            tap('attack');
+          } else {
+            mx = Math.sign(dx);
+            tap('attack');
+          }
+        } else if (me.grounded && dy > 2.2 && adx < 3 && Math.random() < 0.5) {
+          tap('jump');
+        } else if (me.grounded && me.platform !== 'main' && dy < -1.5 && Math.random() < 0.5) {
+          my = -1;
+        } else if (this.projTimer <= 0 && adx > 4 && Math.abs(dy) < 1.5 && me.pp.neutral > 0) {
+          this.projTimer = 2 + Math.random() * 3;
+          if (!facingFoe) mx = Math.sign(dx);
+          tap('special');
+        } else {
+          this.intent = adx > 1.4 ? Math.sign(dx) : Math.random() < 0.3 ? -Math.sign(dx) : 0;
+          if (Math.random() < 0.08 * c.aggression && me.grounded) tap('jump');
+        }
+      }
+      if (mx === 0 && !smash && !want.special) mx = this.intent;
+      // Don't run off the edge on purpose.
+      if (me.grounded && ((mx < 0 && me.pos.x < S.left + 1) || (mx > 0 && me.pos.x > S.right - 1))) mx = 0;
+      // Near the edge in the air, drift back in rather than chasing aerials off stage.
+      if (!me.grounded && me.pos.y < 3 && Math.abs(me.pos.x) > S.right - 2 && Math.sign(me.pos.x) === Math.sign(mx)) mx = -Math.sign(me.pos.x);
+    }
+    if (me.grounded) this.giveUp = Math.random() > c.recover;
+
+    const s = this.state;
     s.moveX = mx;
     s.moveY = my;
-    s.aimX = ax;
-    s.aimY = ay;
-    s.aimActive = aimActive;
+    if (smash) {
+      want.smash = !s.held.smash;
+      s.smashX = smash.x;
+      s.smashY = smash.y;
+    }
     for (const b of BUTTONS) {
       const h = !!want[b];
       s.pressed[b] = h && !s.held[b];

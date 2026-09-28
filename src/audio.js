@@ -80,26 +80,34 @@ export class Audio {
     o.stop(t + dur + 0.05);
   }
 
-  shot(id, x) {
-    if (id === 'smg') {
-      this.noise(0.07, { type: 'bandpass', freq: 2600, q: 0.7, gain: 0.35, x });
-      this.tone(180, 0.05, { type: 'square', freqEnd: 70, gain: 0.12, x });
-    } else if (id === 'shotgun') {
-      this.noise(0.35, { freq: 2200, freqEnd: 300, gain: 0.9, x });
-      this.tone(110, 0.25, { freqEnd: 40, gain: 0.6, x });
-      this.noise(0.08, { type: 'highpass', freq: 3000, gain: 0.2, delay: 0.28, x }); // pump rack
-      this.tone(900, 0.03, { type: 'square', gain: 0.05, delay: 0.3, x });
-    } else if (id === 'sniper') {
-      this.noise(0.08, { type: 'highpass', freq: 3500, gain: 0.6, x });
-      this.noise(0.7, { freq: 1600, freqEnd: 120, gain: 0.8, x });
-      this.tone(80, 0.45, { freqEnd: 35, gain: 0.7, x });
+  // Melee swing whoosh; smash attacks are heavier.
+  swing(x, heavy) {
+    this.noise(heavy ? 0.22 : 0.12, { type: 'bandpass', freq: heavy ? 900 : 1500, freqEnd: heavy ? 2600 : 4000, q: 2, gain: heavy ? 0.3 : 0.18, x });
+  }
+
+  // Impact scaled by damage, with a type-flavoured layer.
+  hit(x, dmg, type) {
+    const g = Math.min(1, 0.25 + dmg / 18);
+    this.noise(0.08 + dmg * 0.01, { freq: 2500 - Math.min(1800, dmg * 90), freqEnd: 200, gain: g, x });
+    this.tone(160 - Math.min(100, dmg * 5), 0.12 + dmg * 0.01, { type: 'square', freqEnd: 50, gain: g * 0.4, x });
+    if (type === 'Electric') this.tone(1200, 0.12, { type: 'sawtooth', freqEnd: 300, gain: 0.12, x });
+    if (type === 'Steel') this.tone(1800, 0.25, { type: 'triangle', freqEnd: 1600, gain: 0.12, x });
+  }
+
+  special(x, type) {
+    if (type === 'Electric') {
+      this.noise(0.3, { type: 'bandpass', freq: 3000, q: 4, gain: 0.25, x });
+      this.tone(220, 0.3, { type: 'sawtooth', freqEnd: 900, gain: 0.1, x });
+    } else if (type === 'Steel') {
+      this.tone(1400, 0.3, { type: 'triangle', freqEnd: 1300, gain: 0.12, x });
+    } else {
+      this.noise(0.15, { type: 'bandpass', freq: 1200, freqEnd: 3000, q: 1.5, gain: 0.2, x });
     }
   }
 
-  hitmarker(heavy) {
-    this.tone(heavy ? 1500 : 2200, 0.04, { type: 'square', gain: heavy ? 0.14 : 0.07 });
-    this.tone(heavy ? 2100 : 3100, 0.03, { type: 'square', gain: heavy ? 0.1 : 0.05, delay: 0.01 });
-  }
+  grab(x) { this.noise(0.08, { type: 'bandpass', freq: 700, q: 1, gain: 0.3, x }); }
+  dodge(x) { this.noise(0.12, { type: 'highpass', freq: 2500, gain: 0.12, x }); }
+  ledge(x) { this.tone(500, 0.06, { type: 'triangle', freqEnd: 700, gain: 0.1, x }); }
 
   impact(x) { this.noise(0.05, { type: 'bandpass', freq: 4000, q: 2, gain: 0.08, x }); }
   block(x) { this.tone(1400, 0.08, { type: 'triangle', freqEnd: 900, gain: 0.15, x }); }
@@ -108,34 +116,12 @@ export class Audio {
     this.tone(700, 0.4, { type: 'sawtooth', freqEnd: 120, gain: 0.2, x });
   }
 
-  explosion(x) {
-    this.noise(1.1, { freq: 900, freqEnd: 60, gain: 1.0, attack: 0.005, x });
-    this.tone(70, 0.8, { freqEnd: 28, gain: 0.8, x });
-  }
-
-  knife(x) { this.noise(0.12, { type: 'bandpass', freq: 1800, freqEnd: 5000, q: 3, gain: 0.25, x }); }
-  knifeHit(x) {
-    this.noise(0.12, { type: 'bandpass', freq: 900, q: 1, gain: 0.5, x });
-    this.tone(220, 0.1, { type: 'square', freqEnd: 90, gain: 0.2, x });
-  }
-
   jump(x, air) { this.tone(air ? 520 : 380, 0.1, { type: 'triangle', freqEnd: air ? 900 : 620, gain: 0.1, x }); }
   land(x, hard) { this.noise(hard ? 0.18 : 0.08, { freq: 500, gain: hard ? 0.35 : 0.12, x }); }
-  exo(x) {
-    this.noise(0.25, { type: 'bandpass', freq: 600, freqEnd: 2400, q: 1.2, gain: 0.35, x });
-  }
   dash(x) {
     this.tone(300, 0.2, { type: 'sawtooth', freqEnd: 1800, gain: 0.1, x });
     this.noise(0.2, { type: 'highpass', freq: 2500, gain: 0.15, x });
   }
-  reload(x) {
-    this.tone(1200, 0.03, { type: 'square', gain: 0.06, x });
-    this.tone(700, 0.04, { type: 'square', gain: 0.07, delay: 0.1, x });
-  }
-  reloadDone(x) { this.tone(1600, 0.04, { type: 'square', gain: 0.07, x }); }
-  empty(x) { this.tone(2400, 0.02, { type: 'square', gain: 0.05, x }); }
-  throw(x) { this.noise(0.15, { type: 'bandpass', freq: 800, freqEnd: 300, gain: 0.2, x }); }
-  bounce(x) { this.tone(900, 0.05, { type: 'triangle', gain: 0.08, x }); }
   launch(x, power) {
     this.noise(0.5, { type: 'bandpass', freq: 1400, freqEnd: 400, q: 0.8, gain: Math.min(0.6, power * 0.02), x });
   }

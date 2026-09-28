@@ -1,48 +1,56 @@
-// Fighter simulation: movement, Smash-style damage % and knockback, and the CoD loadout
-// (gun, knife, frag, exo boost, operator ability). No rendering in here; the game reads
-// this state to drive the 3D model, and effects/audio go through `game` hooks.
+// Fighter simulation: a Smash-style state machine driven by data from src/data/.
+// No rendering in here. The game reads this state to drive the 3D model, and resolves
+// hitboxes/projectiles between fighters. Everything is counted in 60 fps frames.
+//
+// States: ground, air, jumpsquat, attack, landlag, shield, shieldbreak, dodge, holding, held,
+// hitstun, ledge, getup, helpless.
 
-import { PHYS, STAGE, KNIFE, GRENADE, EXO, SHIELD, DASH } from './config.js';
+import { PHYS, COMBAT, SHIELD, DODGE, LEDGE, STAGE } from './config.js';
+import { THROWS, PUMMEL, buildMoveset } from './data/moves.js';
+import { fighterStats } from './data/pokemon.js';
 
+const DT = 1 / 60;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const approach = (v, target, step) => (v < target ? Math.min(v + step, target) : Math.max(v - step, target));
 
 export class Fighter {
-  constructor(game, slot, operator, weapon, colors) {
+  constructor(game, slot, species, colors) {
     this.game = game;
     this.slot = slot;
-    this.op = operator;
-    this.weapon = weapon;
+    this.sp = species;
     this.colors = colors;
-    this.w = operator.width;
-    this.h = operator.height;
+    this.st = fighterStats(species);
+    this.w = species.size.w;
+    this.h = species.size.h;
+    this.moveset = buildMoveset(species);
     this.stocks = 3;
     this.eliminated = false;
     this.streak = 0;
-    this.stats = { kos: 0, falls: 0, sds: 0, damageDealt: 0, damageTaken: 0, shots: 0, hits: 0 };
+    this.stats = { kos: 0, falls: 0, sds: 0, damageDealt: 0, damageTaken: 0, hits: 0 };
     this.pos = { x: 0, y: 0 };
     this.vel = { x: 0, y: 0 };
-    this.aim = { x: 1, y: 0 };
-    this.facing = 1;
+    this.revealed = new Set(); // specials the opponent has seen (Showdown-style info)
     this.spawn(STAGE.spawns[slot] ?? 0, 0);
     this.facing = this.pos.x > 0 ? -1 : 1;
-    this.aim.x = this.facing;
   }
 
   spawn(x, y) {
     Object.assign(this, {
       dead: false, onRevival: false, revivalTimer: 0, respawnTimer: 0,
-      grounded: true, platform: 'main', dropTimer: 0, fastFall: false,
-      airJumps: this.op.airJumps, exoReady: true, exoTimer: 0, exoCooldown: 0, exoPressedAt: -9,
+      state: 'ground', sf: 0, grounded: true, platform: 'main', dropTimer: 0, fastFall: false,
+      airJumps: this.st.airJumps, airDodgeReady: true,
       hitstun: 0, tumble: false, percent: 0, invuln: 0, flash: 0,
-      lastHitBy: null, lastHitTime: -99, lastHitWeapon: null,
-      ammo: this.weapon.mag, reloadTimer: 0, fireCooldown: 0, fireBuffer: 0, adsTime: 0,
-      knifeTimer: 0, knifeHits: new Set(),
-      grenades: GRENADE.max, grenadeTimer: 0,
-      shieldHP: SHIELD.hp, shieldUp: false, shieldBroken: 0,
-      dashTimer: 0, dashCooldown: 0,
-      recoilKick: 0, muzzle: 0, landSquash: 0, t: 0,
+      lastHitBy: null, lastHitTime: -99, lastHitMove: null,
+      move: null, moveF: 0, curF: -1, charge: 0, charging: false, chargeDone: false, chargeMult: 1,
+      hitSet: new Set(), zip: null, moveAir: false, moveLeftGround: false, landLagF: 0,
+      shieldHP: SHIELD.hp, shieldStun: 0, dodge: null,
+      holding: null, heldBy: null, holdTimer: 0, pummelCd: 0,
+      ledge: null, ledgeInvuln: 0, ledgeCooldown: 0, getupKind: null, getupFrom: null,
+      shieldPressedAt: -99, prevMag: 0, flickT: 99, flickX: 0, flickY: 0, sx: 0, sy: 0,
+      landSquash: 0, t: 0,
     });
+    this.pp = {};
+    for (const [slot, m] of Object.entries(this.moveset.specials)) this.pp[slot] = m.pp;
     this.pos.x = x;
     this.pos.y = y;
     this.vel.x = 0;
@@ -53,17 +61,35 @@ export class Fighter {
     this.spawn(0, STAGE.revivalY);
     this.grounded = false;
     this.platform = null;
+    this.state = 'air';
     this.onRevival = true;
     this.facing = this.slot === 0 ? 1 : -1;
-    this.aim = { x: this.facing, y: 0 };
   }
 
   get center() { return { x: this.pos.x, y: this.pos.y + this.h * 0.5 }; }
   get active() { return !this.dead && !this.eliminated; }
 
-  muzzlePos() {
-    const reach = 0.35 + this.weapon.len;
-    return [this.pos.x + this.aim.x * reach, this.pos.y + this.h * 0.77 + this.aim.y * reach];
+  get intangible() {
+    if (this.invuln > 0 || this.onRevival) return true;
+    if (this.state === 'dodge') {
+      const [a, b] = this.dodge.cfg.intangible;
+      return this.sf >= a && this.sf <= b;
+    }
+    if (this.state === 'attack' && this.move && this.move.intangible) {
+      const [a, b] = this.move.intangible;
+      return this.moveF >= a && this.moveF <= b;
+    }
+    if (this.state === 'ledge') return this.ledgeInvuln > 0;
+    return this.state === 'getup';
+  }
+
+  setState(s) {
+    this.state = s;
+    this.sf = 0;
+  }
+
+  toNeutral() {
+    this.setState(this.grounded ? 'ground' : 'air');
   }
 
   update(dt, inp) {
@@ -76,309 +102,684 @@ export class Fighter {
     }
     this.t += dt;
     this.flash = Math.max(0, this.flash - dt * 5);
-    this.recoilKick = Math.max(0, this.recoilKick - dt * 7);
     this.landSquash = Math.max(0, this.landSquash - dt * 5);
-    this.muzzle -= dt;
-    this.fireCooldown -= dt;
-    this.fireBuffer -= dt;
-    this.exoCooldown -= dt;
-    this.dashCooldown -= dt;
-    this.dropTimer -= dt;
-    if (this.invuln > 0) this.invuln -= dt;
-    if (this.grenades < GRENADE.max && (this.grenadeTimer += dt) >= GRENADE.recharge) {
-      this.grenades++;
-      this.grenadeTimer = 0;
-    }
-    if (this.shieldBroken > 0) {
-      this.shieldBroken -= dt;
-      if (this.shieldBroken <= 0) this.shieldHP = SHIELD.hp;
-    } else if (!this.shieldUp) {
-      this.shieldHP = Math.min(SHIELD.hp, this.shieldHP + SHIELD.regen * dt);
-    }
+    if (this.invuln > 0) this.invuln--;
+    if (this.ledgeCooldown > 0) this.ledgeCooldown--;
+    if (this.dropTimer > 0) this.dropTimer--;
+    if (this.state !== 'shield') this.shieldHP = Math.min(SHIELD.hp, this.shieldHP + SHIELD.regen);
+    this.readInput(inp);
 
     if (this.onRevival) {
       this.revivalTimer += dt;
-      this.updateAim(inp);
-      const moved = Math.abs(inp.moveX) > 0.5 || inp.moveY < -0.5 || inp.pressed.jump || inp.pressed.fire || inp.pressed.exo;
+      const moved = Math.abs(this.sx) > 0.5 || this.sy < -0.5 || inp.pressed.jump || inp.pressed.attack || inp.pressed.special;
       if (g.canAct && this.revivalTimer > 0.5 && (moved || this.revivalTimer > 4)) {
         this.onRevival = false;
-        this.invuln = 1.5;
-        if (inp.pressed.jump) this.vel.y = this.op.doubleJump;
+        this.invuln = 90;
+        if (inp.pressed.jump) this.vel.y = this.st.doubleJump;
       }
       return;
     }
 
-    if (this.hitstun > 0) this.hitstun -= dt;
-    const canAct = this.hitstun <= 0 && g.canAct;
-    this.updateAim(inp);
-    if (canAct) {
-      this.control(dt, inp);
-    } else {
-      this.shieldUp = false;
-      this.adsTime = 0;
+    const canAct = g.canAct;
+    switch (this.state) {
+      case 'ground':
+        if (canAct) this.groundControl();
+        else this.vel.x = approach(this.vel.x, 0, PHYS.groundFriction * DT);
+        break;
+      case 'air':
+        if (canAct) this.airControl(true);
+        break;
+      case 'helpless':
+        this.airDrift(0.6);
+        break;
+      case 'jumpsquat':
+        if (this.sf >= 3) this.doJump();
+        break;
+      case 'attack':
+        this.runMove();
+        break;
+      case 'landlag':
+        if (this.sf >= this.landLagF) this.toNeutral();
+        break;
+      case 'shield':
+        this.shieldControl();
+        break;
+      case 'shieldbreak':
+        if (this.sf >= SHIELD.breakFrames) {
+          this.shieldHP = SHIELD.hp * 0.5;
+          this.toNeutral();
+        }
+        break;
+      case 'dodge':
+        this.runDodge();
+        break;
+      case 'holding':
+        this.holdControl();
+        break;
+      case 'held':
+        this.heldControl();
+        break;
+      case 'hitstun':
+        this.hitstunControl();
+        break;
+      case 'ledge':
+        this.ledgeControl();
+        break;
+      case 'getup':
+        this.runGetup();
+        break;
+      default:
+        break;
     }
-
-    if (this.reloadTimer > 0) {
-      this.reloadTimer -= dt;
-      if (this.reloadTimer <= 0) {
-        this.ammo = this.weapon.mag;
-        g.audio.reloadDone(this.pos.x);
-      }
-    }
-    this.updateKnife(dt);
-    this.physics(dt, inp, canAct);
+    this.sf++;
+    if (!['held', 'ledge', 'getup'].includes(this.state)) this.physics();
+    if (this.state === 'holding' || (this.state === 'attack' && this.holding)) this.positionHeld();
+    this.checkLedgeGrab();
     this.checkBlast();
   }
 
-  updateAim(inp) {
-    let ax, ay;
-    if (inp.aimActive) {
-      const m = Math.hypot(inp.aimX, inp.aimY) || 1;
-      ax = inp.aimX / m;
-      ay = inp.aimY / m;
-      if (Math.abs(ax) > 0.1 && this.knifeTimer <= 0) this.facing = Math.sign(ax);
+  // ------------------------------------------------------------------ input
+
+  readInput(inp) {
+    this.inp = inp;
+    const x = Math.abs(inp.moveX) > 0.25 ? inp.moveX : 0;
+    const y = Math.abs(inp.moveY) > 0.25 ? inp.moveY : 0;
+    const mag = Math.max(Math.abs(x), Math.abs(y));
+    if (mag > 0.75 && this.prevMag < 0.3) {
+      this.flickT = 0;
+      this.flickX = x;
+      this.flickY = y;
     } else {
-      const tilt = Math.abs(inp.moveY) > 0.35 ? clamp(inp.moveY, -1, 1) : 0;
-      ax = this.facing;
-      ay = tilt;
-      const m = Math.hypot(ax, ay);
-      ax /= m;
-      ay /= m;
+      this.flickT++;
     }
-    this.aim.x = ax;
-    this.aim.y = ay;
+    this.prevMag = mag;
+    this.sx = x;
+    this.sy = y;
+    if (inp.pressed.shield) this.shieldPressedAt = this.t;
   }
 
-  control(dt, inp) {
-    const op = this.op;
-    const g = this.game;
-    const mx = Math.abs(inp.moveX) > 0.2 ? inp.moveX : 0;
+  // Tap a direction and attack together (or flick the right stick) for a smash attack.
+  smashDir() {
+    const inp = this.inp;
+    if (inp.pressed.smash) return { x: inp.smashX || 0, y: inp.smashY || 0 };
+    if (inp.pressed.attack && this.flickT <= COMBAT.flickFrames) return { x: this.flickX, y: this.flickY };
+    return null;
+  }
 
-    this.shieldUp = op.ability.id === 'shield' && inp.held.ability && this.shieldBroken <= 0 && this.knifeTimer <= 0;
-    if (op.ability.id === 'dash' && inp.pressed.ability && this.dashCooldown <= 0) this.startDash(inp);
+  dirSlot(x, y) {
+    if (y > 0.5 && y >= Math.abs(x)) return 'up';
+    if (y < -0.5 && -y >= Math.abs(x)) return 'down';
+    if (Math.abs(x) > 0.4) return 'side';
+    return 'neutral';
+  }
 
-    if (!inp.aimActive && mx !== 0 && this.knifeTimer <= 0) this.facing = Math.sign(mx);
-    if (mx !== 0 || inp.pressed.jump || inp.pressed.exo) this.tumble = false;
+  // ------------------------------------------------------------------ ground / air
 
-    const speedMult = this.shieldUp ? SHIELD.moveMult : this.adsTime > 0 && !inp.held.fire ? 0.55 : 1;
-    if (this.dashTimer > 0 || this.exoTimer > 0) {
-      // velocity is locked during boosts
-    } else if (this.grounded) {
-      const target = mx * op.runSpeed * speedMult;
-      const rate = mx !== 0 && Math.sign(mx) === Math.sign(this.vel.x || mx) ? PHYS.groundAccel : PHYS.groundFriction + PHYS.groundAccel * 0.5;
-      this.vel.x = approach(this.vel.x, target, rate * dt);
-    } else if (mx !== 0) {
-      const target = mx * op.airSpeed * speedMult;
-      if (Math.abs(this.vel.x) < op.airSpeed || Math.sign(this.vel.x) !== Math.sign(mx)) {
-        this.vel.x = approach(this.vel.x, target, PHYS.airAccel * dt);
-      }
-    }
-
-    if (inp.pressed.jump && this.dashTimer <= 0) {
-      if (this.grounded) {
-        this.vel.y = op.jump;
-        this.leaveGround();
-        this.landSquash = 0;
-        g.effects.dust(this.pos.x, this.pos.y, 6);
-        g.audio.jump(this.pos.x, false);
-      } else if (this.airJumps > 0) {
-        this.airJumps--;
-        this.vel.y = op.doubleJump;
-        this.fastFall = false;
-        g.effects.ring(this.pos.x, this.pos.y + 0.1, 0xffffff, 1.4, 0.25);
-        g.audio.jump(this.pos.x, true);
-      }
-    }
-    if (this.grounded && this.platform !== 'main' && inp.pressed.down) {
-      this.dropTimer = 0.22;
+  groundControl() {
+    const inp = this.inp;
+    const n = this.moveset.normals;
+    if (inp.pressed.jump) { this.setState('jumpsquat'); return; }
+    if (inp.pressed.grab || (inp.held.shield && inp.pressed.attack)) { this.startMove(n.grab); return; }
+    if (inp.pressed.special) { this.startSpecial(); return; }
+    const sm = this.smashDir();
+    if (sm) { this.groundSmash(sm); return; }
+    if (inp.pressed.attack) { this.groundAttack(); return; }
+    if (inp.held.shield) { this.setState('shield'); return; }
+    if (this.platform !== 'main' && this.flickT === 0 && this.flickY < -0.7) {
+      this.dropTimer = 12;
       this.leaveGround();
       this.vel.y = -2;
-    } else if (!this.grounded && inp.pressed.down && this.vel.y < 4) {
-      this.fastFall = true;
+      return;
     }
+    const sx = this.sx;
+    if (sx) this.facing = Math.sign(sx);
+    const speed = Math.abs(sx) > 0.6 ? this.st.runSpeed : this.st.runSpeed * 0.45;
+    const rate = sx && Math.sign(sx) === Math.sign(this.vel.x || sx) ? PHYS.groundAccel : PHYS.groundFriction + PHYS.groundAccel * 0.5;
+    this.vel.x = approach(this.vel.x, sx * speed, rate * DT);
+  }
 
-    if (inp.pressed.exo) this.exoPressedAt = this.t;
-    if (inp.pressed.exo && this.exoReady && this.exoCooldown <= 0 && this.dashTimer <= 0) {
-      let dx = inp.moveX;
-      let dy = inp.moveY;
-      let m = Math.hypot(dx, dy);
-      if (m < 0.3) { dx = this.facing; dy = 0; m = 1; }
-      dx /= m;
-      dy /= m;
-      if (this.grounded && dy < 0) {
-        dy = 0;
-        dx = Math.sign(dx) || this.facing;
-      }
-      this.vel.x = dx * EXO.speed;
-      this.vel.y = dy * EXO.speed;
-      this.exoTimer = EXO.time;
-      this.exoCooldown = EXO.cooldown;
+  groundAttack() {
+    const n = this.moveset.normals;
+    const { sx, sy } = this;
+    if (Math.abs(this.vel.x) > this.st.runSpeed * 0.75 && Math.abs(sx) > 0.6) return this.startMove(n.dash);
+    if (sy > 0.5 && sy >= Math.abs(sx)) return this.startMove(n.utilt);
+    if (sy < -0.5 && -sy >= Math.abs(sx)) return this.startMove(n.dtilt);
+    if (Math.abs(sx) > 0.4) {
+      this.facing = Math.sign(sx);
+      return this.startMove(n.ftilt);
+    }
+    return this.startMove(n.jab);
+  }
+
+  groundSmash(d) {
+    const n = this.moveset.normals;
+    if (d.y > 0.5 && d.y >= Math.abs(d.x)) return this.startMove(n.usmash);
+    if (d.y < -0.5 && -d.y >= Math.abs(d.x)) return this.startMove(n.dsmash);
+    if (d.x) this.facing = Math.sign(d.x);
+    return this.startMove(n.fsmash);
+  }
+
+  doJump() {
+    const full = this.inp.held.jump;
+    this.vel.y = full ? this.st.jump : this.st.jump * 0.72; // release early for a short hop
+    this.vel.x = this.sx * this.st.airSpeed * 0.9 + this.vel.x * 0.3;
+    this.leaveGround();
+    this.setState('air');
+    this.game.effects.dust(this.pos.x, this.pos.y, 5);
+    this.game.audio.jump(this.pos.x, false);
+  }
+
+  airControl() {
+    const inp = this.inp;
+    if (inp.pressed.jump && this.airJumps > 0) {
+      this.airJumps--;
+      this.vel.y = this.st.doubleJump;
+      this.vel.x = this.sx * this.st.airSpeed;
       this.fastFall = false;
-      if (!this.grounded) this.exoReady = false;
-      if (dy > 0.2) this.leaveGround();
-      g.effects.boost(this.pos.x, this.pos.y + this.h * 0.6, -dx, -dy, this.colors.accent);
-      g.audio.exo(this.pos.x);
+      this.tumble = false;
+      this.game.effects.ring(this.pos.x, this.pos.y + 0.1, 0xffffff, 1.2, 0.25);
+      this.game.audio.jump(this.pos.x, true);
+      return;
     }
+    if (inp.pressed.shield && this.airDodgeReady) { this.startDodge('air'); return; }
+    if (inp.pressed.special) { this.startSpecial(); return; }
+    const sm = this.smashDir();
+    if (sm) { this.aerial(sm.x, sm.y); return; }
+    if (inp.pressed.attack || inp.pressed.grab) { this.aerial(this.sx, this.sy); return; }
+    this.airDrift(1);
+  }
 
-    const W = this.weapon;
-    if (inp.held.ads && !this.shieldUp && this.knifeTimer <= 0) this.adsTime += dt;
-    else this.adsTime = 0;
-    if (inp.pressed.fire) this.fireBuffer = 0.12;
-    if (inp.pressed.reload && this.ammo < W.mag && this.reloadTimer <= 0) this.startReload();
-    // Touch sticks hold to fire, so semi-auto guns refire on their own there.
-    const trigger = W.auto || inp.autoFire ? inp.held.fire : this.fireBuffer > 0;
-    if (trigger && !this.shieldUp && this.knifeTimer <= 0 && this.dashTimer <= 0 && this.reloadTimer <= 0) {
-      if (this.ammo <= 0) {
-        this.startReload();
-      } else if (this.fireCooldown <= 0) {
-        this.fire();
-        this.fireBuffer = 0;
+  aerial(x, y) {
+    const n = this.moveset.normals;
+    const rx = x * this.facing;
+    let m = n.nair;
+    if (Math.abs(y) > Math.abs(x) && Math.abs(y) > 0.5) m = y > 0 ? n.uair : n.dair;
+    else if (rx > 0.5) m = n.fair;
+    else if (rx < -0.5) m = n.bair;
+    this.tumble = false;
+    this.startMove(m);
+  }
+
+  airDrift(mult) {
+    const sx = this.sx;
+    const st = this.st;
+    if (sx) {
+      const target = sx * st.airSpeed * mult;
+      if (Math.abs(this.vel.x) < st.airSpeed || Math.sign(this.vel.x) !== Math.sign(sx)) {
+        this.vel.x = approach(this.vel.x, target, PHYS.airAccel * DT);
       }
     }
-    if (inp.pressed.knife && this.knifeTimer <= 0 && !this.shieldUp) this.startKnife();
-    if (inp.pressed.grenade && this.grenades > 0 && !this.shieldUp && this.knifeTimer <= 0) this.throwGrenade();
+    if (this.flickT === 0 && this.flickY < -0.7 && this.vel.y < 3) this.fastFall = true;
   }
 
   leaveGround() {
     this.grounded = false;
     this.platform = null;
+    if (this.state === 'attack') this.moveLeftGround = true;
+    if (['ground', 'shield', 'landlag'].includes(this.state)) this.setState('air');
   }
 
-  fire() {
-    const W = this.weapon;
-    const g = this.game;
-    this.ammo--;
-    this.fireCooldown = W.interval;
-    this.stats.shots++;
-    this.tumble = false;
-    const charged = this.adsTime >= W.adsTime;
-    let spread = W.hipSpread ?? W.spread;
-    if (charged) spread = W.spread * 0.4;
-    else if (this.adsTime > 0) spread = W.spread * 0.7;
-    const base = Math.atan2(this.aim.y, this.aim.x);
-    const [mx, my] = this.muzzlePos();
-    const shot = { hit: false };
-    for (let i = 0; i < W.pellets; i++) {
-      const a = W.pellets > 1
-        ? base + (i / (W.pellets - 1) - 0.5) * spread * 2 + (Math.random() - 0.5) * 0.05
-        : base + (Math.random() - 0.5) * 2 * spread;
-      g.spawnBullet(this, mx, my, Math.cos(a), Math.sin(a), W, charged ? W.adsMult : 1, shot);
-    }
+  // ------------------------------------------------------------------ moves
 
-    const r = W.recoil;
-    if (r > 2) {
-      this.vel.x -= this.aim.x * r * (this.grounded ? 0.5 : 1);
-      if (this.aim.y < -0.3) {
-        // Shooting downward is a rocket jump.
-        this.vel.y = Math.max(this.vel.y, -this.aim.y * r);
-        this.leaveGround();
-        this.fastFall = false;
-      } else if (!this.grounded) {
-        this.vel.y -= this.aim.y * r * 0.5;
-      }
+  startMove(m) {
+    this.move = m;
+    this.moveF = 0;
+    this.curF = -1;
+    this.hitSet = new Set();
+    this.charge = 0;
+    this.charging = false;
+    this.chargeDone = false;
+    this.chargeMult = 1;
+    this.zip = null;
+    this.moveAir = !this.grounded;
+    this.moveLeftGround = false;
+    this.moveStick = { x: this.sx, y: this.sy }; // direction held when the move started
+    this.setState('attack');
+    this.game.onMoveStart(this, m);
+  }
+
+  startSpecial() {
+    const slot = this.dirSlot(this.sx, this.sy);
+    if (slot === 'side' && this.sx) this.facing = Math.sign(this.sx);
+    let m = this.moveset.specials[slot];
+    if (this.pp[slot] <= 0) {
+      m = slot === 'up' ? this.moveset.struggle.up : this.moveset.struggle.other;
     } else {
-      this.vel.x -= this.aim.x * r;
+      this.pp[slot]--;
+      this.revealed.add(slot);
     }
-    this.recoilKick = 1;
-    this.muzzle = 0.05;
-    g.onFire(this, mx, my, charged);
-    if (this.ammo <= 0) this.startReload();
+    if (!this.grounded && m.air) m = { ...m, ...m.air, air: undefined };
+    this.startMove(m);
   }
 
-  startReload() {
-    if (this.reloadTimer > 0) return;
-    this.reloadTimer = this.weapon.reload;
-    this.game.audio.reload(this.pos.x);
-  }
+  runMove() {
+    const m = this.move;
+    const inp = this.inp;
+    const f = this.moveF;
+    this.curF = f;
 
-  startKnife() {
-    this.knifeTimer = KNIFE.duration;
-    this.knifeHits.clear();
-    this.tumble = false;
-    this.vel.x += this.facing * KNIFE.lunge;
-    this.game.audio.knife(this.pos.x);
-  }
+    if (m.chargeF !== undefined && f === m.chargeF && !this.chargeDone) {
+      if ((inp.held.attack || inp.held.smash) && this.charge < COMBAT.smashChargeFrames) {
+        this.charge++;
+        this.charging = true;
+        this.chargeMult = 1 + (this.charge / COMBAT.smashChargeFrames) * COMBAT.smashChargeBonus;
+        this.curF = -1;
+        this.vel.x = approach(this.vel.x, 0, PHYS.groundFriction * DT);
+        return;
+      }
+      this.chargeDone = true;
+      this.charging = false;
+    }
 
-  updateKnife(dt) {
-    if (this.knifeTimer <= 0) return;
-    this.knifeTimer -= dt;
-    const tIn = KNIFE.duration - this.knifeTimer;
-    if (tIn >= KNIFE.activeStart && tIn <= KNIFE.activeEnd) {
-      this.game.meleeCheck(this, {
-        x: this.pos.x + this.facing * 0.85,
-        y: this.pos.y + this.h * 0.55,
-        hw: 0.8,
-        hh: 0.7,
-      });
+    if (m.events) for (const ev of m.events) if (ev.f === f) this.doEvent(ev);
+    if (this.zip) {
+      this.zip.frames--;
+      this.vel.x = this.zip.vx;
+      this.vel.y = this.zip.vy;
+      if (this.zip.frames <= 0) {
+        this.vel.x *= 0.3;
+        this.vel.y *= 0.3;
+        this.zip = null;
+      }
+    }
+    this.moveF++;
+
+    if (m.recycle && f >= m.recycle && inp.pressed.attack) { this.startMove(m); return; }
+    if (this.moveF >= m.total) { this.endMove(); return; }
+
+    if (this.grounded) {
+      if (!this.zip) this.vel.x = approach(this.vel.x, 0, PHYS.groundFriction * DT * 0.8);
+    } else if (!this.zip) {
+      this.airDrift(m.aerial ? 1 : 0.5);
     }
   }
 
-  throwGrenade() {
-    this.grenades--;
-    const s = GRENADE.throwSpeed;
-    const vx = this.aim.x * s + this.vel.x * 0.3;
-    const vy = this.aim.y * s + 5;
-    this.game.spawnGrenade(this, this.pos.x + this.facing * 0.4, this.pos.y + this.h * 0.8, vx, vy);
-    this.game.audio.throw(this.pos.x);
+  doEvent(ev) {
+    const g = this.game;
+    switch (ev.do) {
+      case 'vel': {
+        const e = !this.grounded && ev.air ? ev.air : ev;
+        if (e.x !== undefined) this.vel.x = e.x * this.facing;
+        if (e.y !== undefined && (e.y !== 0 || !this.grounded)) {
+          this.vel.y = e.y;
+          if (e.y > 0) this.leaveGround();
+        }
+        break;
+      }
+      case 'rise':
+        this.vel.y = Math.max(this.vel.y, 15);
+        this.vel.x = this.sx * 4;
+        this.fastFall = false;
+        this.leaveGround();
+        g.effects.ring(this.pos.x, this.pos.y, this.colors.accent, 1.6, 0.3);
+        break;
+      case 'zip': {
+        // Aim with the stick now, else the direction held when the move started, else straight up.
+        let dx = this.sx;
+        let dy = this.sy;
+        if (Math.hypot(dx, dy) < 0.3) ({ x: dx, y: dy } = this.moveStick);
+        if (Math.hypot(dx, dy) < 0.3) { dx = 0; dy = 1; }
+        if (this.grounded && dy < 0) dy = 0;
+        const m = Math.hypot(dx, dy) || 1;
+        dx /= m;
+        dy /= m;
+        if (Math.abs(dx) > 0.1) this.facing = Math.sign(dx);
+        this.zip = { vx: dx * ev.speed, vy: dy * ev.speed, frames: ev.frames };
+        this.fastFall = false;
+        if (dy > 0.1) this.leaveGround();
+        g.effects.boost(this.pos.x, this.pos.y + this.h * 0.5, -dx, -dy, 0xffffff, true);
+        g.audio.dash(this.pos.x);
+        break;
+      }
+      case 'projectile':
+        g.spawnProjectile(this, ev.proj, this.move);
+        break;
+      case 'release':
+        if (this.holding) g.throwHit(this, this.holding, this.move.throwDef);
+        break;
+      default:
+        break;
+    }
   }
 
-  startDash(inp) {
-    let dx = inp.moveX;
-    let dy = inp.moveY;
-    let m = Math.hypot(dx, dy);
-    if (m < 0.3) { dx = this.facing; dy = 0; m = 1; }
-    dx /= m;
-    dy /= m;
-    if (this.grounded && dy < 0) { dy = 0; dx = Math.sign(dx) || this.facing; }
-    this.vel.x = dx * DASH.speed;
-    this.vel.y = dy * DASH.speed;
-    this.dashTimer = DASH.time;
-    this.dashCooldown = DASH.cooldown;
-    this.fastFall = false;
-    if (dy > 0.2) this.leaveGround();
-    this.game.effects.boost(this.pos.x, this.pos.y + this.h * 0.5, -dx, -dy, this.colors.accent, true);
-    this.game.audio.dash(this.pos.x);
+  endMove() {
+    const m = this.move;
+    this.move = null;
+    this.charging = false;
+    this.zip = null;
+    if (m && m.recoil) this.percent = Math.min(999, this.percent + m.recoil);
+    if (this.holding) this.releaseGrab(false);
+    if (this.grounded) this.setState('ground');
+    else this.setState(m && m.helpless ? 'helpless' : 'air');
   }
 
-  physics(dt, inp, canAct) {
-    const op = this.op;
+  landLag(frames) {
+    this.move = null;
+    this.zip = null;
+    this.landLagF = frames;
+    this.setState('landlag');
+  }
+
+  // ------------------------------------------------------------------ defence
+
+  shieldControl() {
+    const inp = this.inp;
+    this.vel.x = approach(this.vel.x, 0, PHYS.groundFriction * DT);
+    if (this.shieldStun > 0) { this.shieldStun--; return; }
+    if (inp.pressed.jump) { this.setState('jumpsquat'); return; }
+    if (inp.pressed.attack || inp.pressed.grab) { this.startMove(this.moveset.normals.grab); return; }
+    if (this.flickT === 0 && Math.abs(this.flickX) > 0.7 && Math.abs(this.flickX) >= Math.abs(this.flickY)) {
+      this.startDodge('roll', Math.sign(this.flickX));
+      return;
+    }
+    if (this.flickT === 0 && this.flickY < -0.7) { this.startDodge('spot'); return; }
+    if (!inp.held.shield) { this.setState('ground'); return; }
+    this.shieldHP -= SHIELD.drain;
+    if (this.shieldHP <= 0) this.breakShield();
+  }
+
+  breakShield() {
+    this.shieldHP = 0;
+    this.shieldStun = 0;
+    this.setState('shieldbreak');
+    this.vel.y = 9;
+    this.grounded = false;
+    this.platform = null;
+    this.game.effects.sparks(this.pos.x, this.pos.y + this.h * 0.5, 0, 1, this.colors.accent, 30, 10);
+    this.game.audio.shieldBreak(this.pos.x);
+    this.game.popup(this.slot, 'SHIELD BREAK', 'bad');
+  }
+
+  startDodge(kind, dir = 0) {
+    const cfg = DODGE[kind];
+    this.dodge = { kind, cfg, dir };
+    if (kind === 'air') {
+      let dx = this.sx;
+      let dy = this.sy;
+      const m = Math.hypot(dx, dy);
+      if (m > 0.3) { dx /= m; dy /= m; } else { dx = 0; dy = 0; }
+      this.dodge.vx = dx * cfg.speed;
+      this.dodge.vy = dy * cfg.speed;
+      this.airDodgeReady = false;
+      this.fastFall = false;
+    }
+    this.setState('dodge');
+    this.game.audio.dodge(this.pos.x);
+  }
+
+  runDodge() {
+    const d = this.dodge;
+    const cfg = d.cfg;
+    if (d.kind === 'roll') {
+      this.vel.x = this.sf >= 4 && this.sf < 22 ? (d.dir * cfg.dist) / (18 / 60) : approach(this.vel.x, 0, PHYS.groundFriction * DT);
+    } else if (d.kind === 'spot') {
+      this.vel.x = approach(this.vel.x, 0, PHYS.groundFriction * DT);
+    } else if (this.sf < cfg.moveFrames) {
+      this.vel.x = d.vx;
+      this.vel.y = d.vy;
+    } else if (this.sf === cfg.moveFrames) {
+      this.vel.x *= 0.3;
+      this.vel.y *= 0.3;
+    }
+    if (this.sf >= cfg.total) {
+      this.dodge = null;
+      this.toNeutral();
+    }
+  }
+
+  // ------------------------------------------------------------------ grabs
+
+  startHolding(v) {
+    this.move = null;
+    this.holding = v;
+    this.holdTimer = 70 + v.percent * 0.6;
+    this.pummelCd = 0;
+    this.setState('holding');
+    this.vel.x = 0;
+    v.heldBy = this;
+    v.move = null;
+    v.zip = null;
+    v.dodge = null;
+    v.facing = -this.facing;
+    v.setState('held');
+    v.vel.x = v.vel.y = 0;
+    this.game.onGrab(this, v);
+  }
+
+  holdControl() {
+    const v = this.holding;
+    const inp = this.inp;
+    if (!v || v.state !== 'held' || !v.active) { this.holding = null; this.toNeutral(); return; }
+    this.holdTimer--;
+    this.pummelCd--;
+    this.vel.x = approach(this.vel.x, 0, PHYS.groundFriction * DT);
+    if (this.holdTimer <= 0) { this.releaseGrab(true); return; }
+    if (this.sf < 6) return;
+    let dx = this.sx;
+    let dy = this.sy;
+    if (inp.pressed.smash) { dx = inp.smashX; dy = inp.smashY; }
+    if (Math.abs(dx) > 0.6 || Math.abs(dy) > 0.6) {
+      const dir = Math.abs(dy) > Math.abs(dx) ? (dy > 0 ? 'up' : 'down') : dx * this.facing > 0 ? 'forward' : 'back';
+      this.startThrow(dir);
+      return;
+    }
+    if (inp.pressed.attack && this.pummelCd <= 0) {
+      this.pummelCd = PUMMEL.every;
+      this.game.pummel(this, v);
+    }
+  }
+
+  startThrow(dir) {
+    const T = THROWS[dir];
+    const v = this.holding;
+    this.startMove({ id: 'throw', name: `${dir} throw`, anim: T.anim, total: T.total, throwDef: { ...T, dir }, events: [{ f: T.release, do: 'release' }] });
+    this.holding = v;
+  }
+
+  // Keep the held fighter in the grabber's hands, swinging them around during throws.
+  positionHeld() {
+    const v = this.holding;
+    if (!v) return;
+    const reach = this.w / 2 + v.w / 2 - 0.05;
+    let fx = this.facing * reach;
+    let y = this.pos.y + 0.1;
+    if (this.state === 'attack' && this.move && this.move.throwDef) {
+      const T = this.move.throwDef;
+      const p = Math.min(1, this.moveF / T.release);
+      if (T.dir === 'back') fx = this.facing * reach * Math.cos(p * Math.PI);
+      else if (T.dir === 'up') { fx *= 1 - p; y += p * this.h; }
+      else if (T.dir === 'down') y -= p * 0.2;
+    }
+    v.pos.x = this.pos.x + fx;
+    v.pos.y = y;
+    v.vel.x = v.vel.y = 0;
+  }
+
+  heldControl() {
+    const inp = this.inp;
+    const by = this.heldBy;
+    if (!by || (by.state !== 'holding' && !(by.state === 'attack' && by.holding === this))) {
+      this.heldBy = null;
+      this.toNeutral();
+      return;
+    }
+    // Mash to escape.
+    const mashed = inp.pressed.attack || inp.pressed.special || inp.pressed.jump || inp.pressed.shield || this.flickT === 0;
+    if (mashed && by.state === 'holding') by.holdTimer -= 5;
+  }
+
+  releaseGrab(push) {
+    const v = this.holding;
+    this.holding = null;
+    if (v && v.state === 'held') {
+      v.heldBy = null;
+      if (push) {
+        v.vel.x = this.facing * 7;
+        v.vel.y = 6;
+        v.grounded = false;
+        v.platform = null;
+        v.setState('air');
+        this.vel.x = -this.facing * 5;
+      } else {
+        v.toNeutral();
+      }
+    }
+    if (this.state === 'holding') this.toNeutral();
+  }
+
+  // ------------------------------------------------------------------ hitstun & ledges
+
+  hitstunControl() {
+    this.hitstun -= DT;
+    if (this.sx) this.vel.x += this.sx * 4 * DT; // a little directional influence
+    if (this.hitstun <= 0) this.toNeutral();
+  }
+
+  checkLedgeGrab() {
+    const okState = this.state === 'air' || this.state === 'helpless' || (this.state === 'attack' && this.move && this.move.helpless);
+    if (!okState || this.vel.y > 0 || this.ledgeCooldown > 0 || this.onRevival || this.sy < -0.6) return;
     const S = STAGE.main;
+    for (const side of [-1, 1]) {
+      const edgeX = side < 0 ? S.left : S.right;
+      const out = (this.pos.x - edgeX) * side; // > 0 when outside the stage on this side
+      if (out < -0.4 || out > this.w / 2 + LEDGE.reachX) continue;
+      const hands = this.pos.y + this.h * 0.85;
+      if (hands < S.top - LEDGE.reachDown || hands > S.top + LEDGE.reachUp) continue;
+      if (this.game.ledgeOccupied(side, this)) continue;
+      this.grabLedge(side);
+      return;
+    }
+  }
 
-    if (this.dashTimer > 0) {
-      this.dashTimer -= dt;
-      if (this.dashTimer <= 0) { this.vel.x *= DASH.keep; this.vel.y *= DASH.keep; }
-    } else if (this.exoTimer > 0) {
-      this.exoTimer -= dt;
-      if (this.exoTimer <= 0) { this.vel.x *= EXO.keep; this.vel.y *= EXO.keep; }
-    } else if (!this.grounded) {
-      this.vel.y -= PHYS.gravity * (this.hitstun > 0 ? PHYS.hitstunGravity : 1) * dt;
-      const maxFall = op.maxFall * (this.fastFall ? PHYS.fastFallMult : 1);
+  grabLedge(side) {
+    const S = STAGE.main;
+    const edgeX = side < 0 ? S.left : S.right;
+    this.move = null;
+    this.zip = null;
+    this.ledge = side;
+    this.setState('ledge');
+    this.vel.x = this.vel.y = 0;
+    this.pos.x = edgeX + side * (this.w / 2);
+    this.pos.y = S.top - this.h * 0.85;
+    this.facing = -side;
+    this.airJumps = this.st.airJumps;
+    this.airDodgeReady = true;
+    this.fastFall = false;
+    this.tumble = false;
+    this.ledgeInvuln = LEDGE.invulnFrames;
+    this.game.audio.ledge(this.pos.x);
+  }
+
+  ledgeControl() {
+    this.ledgeInvuln--;
+    if (this.sf < LEDGE.actionableAfter) return;
+    const inp = this.inp;
+    const toward = -this.ledge;
+    if (this.sf > LEDGE.maxHangFrames) { this.dropLedge(); return; }
+    if (inp.pressed.jump) {
+      const S = STAGE.main;
+      this.ledge = null;
+      this.pos.y = S.top + 0.05;
+      this.pos.x += toward * 0.2;
+      this.vel.y = this.st.jump * 1.05;
+      this.vel.x = toward * 2;
+      this.setState('air');
+      this.ledgeCooldown = LEDGE.regrabCooldown;
+      this.game.audio.jump(this.pos.x, false);
+      return;
+    }
+    if (inp.pressed.attack || inp.pressed.special) { this.startGetup('attack'); return; }
+    if (inp.pressed.shield) { this.startGetup('roll'); return; }
+    if (this.sy > 0.6 || this.sx * toward > 0.6) { this.startGetup('climb'); return; }
+    if (this.sy < -0.6 || this.sx * toward < -0.6) this.dropLedge();
+  }
+
+  dropLedge() {
+    this.pos.x += this.ledge * 0.15;
+    this.ledge = null;
+    this.ledgeCooldown = LEDGE.regrabCooldown;
+    this.setState('air');
+  }
+
+  startGetup(kind) {
+    const S = STAGE.main;
+    const side = this.ledge;
+    const toward = -side;
+    const edgeX = side < 0 ? S.left : S.right;
+    this.ledge = null;
+    if (kind === 'attack') {
+      this.pos.x = edgeX + toward * (this.w / 2 + 0.05);
+      this.pos.y = S.top;
+      this.grounded = true;
+      this.platform = 'main';
+      this.facing = toward;
+      this.startMove(this.moveset.normals.ledgeAttack);
+      return;
+    }
+    const dist = kind === 'roll' ? 2.4 : this.w / 2 + 0.1;
+    this.getupKind = kind;
+    this.getupFrom = { x: this.pos.x, y: this.pos.y };
+    this.getupTo = { x: edgeX + toward * dist, y: S.top };
+    this.getupTotal = kind === 'roll' ? 30 : 22;
+    this.setState('getup');
+  }
+
+  runGetup() {
+    const p = Math.min(1, this.sf / this.getupTotal);
+    const a = this.getupFrom;
+    const b = this.getupTo;
+    const rise = Math.min(1, p * 2);
+    this.pos.y = a.y + (b.y - a.y) * rise;
+    this.pos.x = a.x + (b.x - a.x) * (this.getupKind === 'roll' ? p : Math.max(0, p * 2 - 1));
+    if (this.sf >= this.getupTotal) {
+      this.pos.x = b.x;
+      this.pos.y = b.y;
+      this.grounded = true;
+      this.platform = 'main';
+      this.vel.x = this.vel.y = 0;
+      this.setState('ground');
+    }
+  }
+
+  // ------------------------------------------------------------------ physics
+
+  physics() {
+    const st = this.st;
+    const S = STAGE.main;
+    const airDodging = this.state === 'dodge' && this.dodge.kind === 'air' && this.sf < this.dodge.cfg.moveFrames;
+    const noGrav = !!this.zip || airDodging;
+
+    if (!this.grounded && !noGrav) {
+      const launched = this.state === 'hitstun';
+      this.vel.y -= PHYS.gravity * (launched ? PHYS.hitstunGravity : 1) * DT;
+      const maxFall = st.maxFall * (this.fastFall ? PHYS.fastFallMult : 1);
       if (this.fastFall && this.vel.y < 0) this.vel.y = Math.min(this.vel.y, -maxFall);
-      else if (this.vel.y < -maxFall) this.vel.y = approach(this.vel.y, -maxFall, 60 * dt);
-      if (Math.abs(this.vel.x) > op.airSpeed) {
-        this.vel.x = approach(this.vel.x, Math.sign(this.vel.x) * op.airSpeed, PHYS.kbDecay * dt);
-      } else if (!(canAct && Math.abs(inp.moveX) > 0.2)) {
-        this.vel.x = approach(this.vel.x, 0, PHYS.airFriction * dt);
+      else if (this.vel.y < -maxFall) this.vel.y = approach(this.vel.y, -maxFall, 60 * DT);
+      if (Math.abs(this.vel.x) > st.airSpeed) {
+        this.vel.x = approach(this.vel.x, Math.sign(this.vel.x) * st.airSpeed, PHYS.kbDecay * DT);
+      } else if (!this.sx || launched) {
+        this.vel.x = approach(this.vel.x, 0, PHYS.airFriction * DT);
       }
-      if (this.hitstun > 0 && Math.abs(inp.moveX) > 0.3) {
-        this.vel.x += inp.moveX * 4 * dt; // a little directional influence while launched
-      }
-    } else if (!canAct) {
-      this.vel.x = approach(this.vel.x, 0, PHYS.groundFriction * dt);
+    } else if (this.grounded && !['ground', 'attack', 'dodge', 'shield', 'holding'].includes(this.state)) {
+      this.vel.x = approach(this.vel.x, 0, PHYS.groundFriction * DT);
     }
 
     const prevX = this.pos.x;
     const prevY = this.pos.y;
-    let nx = prevX + this.vel.x * dt;
-    let ny = prevY + this.vel.y * dt;
+    let nx = prevX + this.vel.x * DT;
+    let ny = prevY + this.vel.y * DT;
     const hw = this.w / 2;
 
     if (this.grounded) {
-      const top = this.supportTop(nx);
-      if (top === null || this.vel.y > 0) {
+      const sup = this.supportRange();
+      // Rolls, shields and grounded attacks stop at the edge instead of sliding off it
+      // (zips like Quick Attack can still leave the ground).
+      const stopsAtEdge = ['dodge', 'shield', 'shieldbreak', 'holding', 'landlag'].includes(this.state) || (this.state === 'attack' && !this.zip);
+      if (sup && stopsAtEdge) nx = clamp(nx, sup[0], sup[1]);
+      if (!sup || nx < sup[0] || nx > sup[1] || this.vel.y > 0) {
         this.leaveGround();
       } else {
-        ny = top;
+        ny = sup[2];
         this.vel.y = 0;
       }
     }
@@ -386,40 +787,31 @@ export class Fighter {
     if (!this.grounded) {
       if (this.vel.y <= 0) {
         if (prevY >= S.top - 0.001 && ny <= S.top && nx + hw * 0.6 > S.left && nx - hw * 0.6 < S.right) {
-          ny = this.land('main', S.top, inp);
-        } else if (this.dropTimer <= 0) {
+          ny = this.land('main', S.top);
+        } else if (this.dropTimer <= 0 && !(this.sy < -0.6 && this.state === 'air')) {
           STAGE.platforms.forEach((p, i) => {
             if (!this.grounded && prevY >= p.y - 0.001 && ny <= p.y && Math.abs(nx - p.x) <= p.w / 2 + hw * 0.3) {
-              ny = this.land(i, p.y, inp);
+              ny = this.land(i, p.y);
             }
           });
         }
       } else if (prevY + this.h <= S.bottom + 0.001 && ny + this.h > S.bottom && nx + hw > S.left && nx - hw < S.right) {
         ny = S.bottom - this.h;
-        this.vel.y = this.hitstun > 0 ? -this.vel.y * 0.4 : 0;
+        this.vel.y = this.state === 'hitstun' ? -this.vel.y * 0.4 : 0;
       }
     }
 
-    // Side walls of the main stage, with an arcade "ledge hop" so recoveries that
-    // reach the lip pop up onto the stage instead of sliding down the wall.
+    // Side walls of the main stage (bounce off them when launched).
     if (ny < S.top - 0.001 && ny + this.h > S.bottom && nx + hw > S.left && nx - hw < S.right) {
       const fromLeft = prevX + hw <= S.left + 0.05;
       const fromRight = prevX - hw >= S.right - 0.05;
       if (fromLeft || fromRight) {
-        const edgeX = fromLeft ? S.left - hw : S.right + hw;
-        if (this.hitstun <= 0 && ny > S.top - 1.1 && this.vel.y < 6) {
-          nx = fromLeft ? S.left + hw * 0.5 : S.right - hw * 0.5;
-          ny = this.land('main', S.top, inp);
-          this.vel.x = 0;
-          this.game.effects.dust(nx, ny, 5);
+        nx = fromLeft ? S.left - hw : S.right + hw;
+        if (this.state === 'hitstun' && Math.abs(this.vel.x) > 8) {
+          this.vel.x = -this.vel.x * 0.5;
+          this.game.effects.dust(nx, ny + this.h / 2, 8);
         } else {
-          nx = edgeX;
-          if (this.hitstun > 0 && Math.abs(this.vel.x) > 8) {
-            this.vel.x = -this.vel.x * 0.5;
-            this.game.effects.dust(nx, ny + this.h / 2, 8);
-          } else {
-            this.vel.x = 0;
-          }
+          this.vel.x = 0;
         }
       }
     }
@@ -428,47 +820,67 @@ export class Fighter {
     this.pos.y = ny;
   }
 
-  supportTop(x) {
+  // [minX, maxX, top] of whatever the fighter is standing on.
+  supportRange() {
     const hw = this.w / 2;
     if (this.platform === 'main') {
       const S = STAGE.main;
-      return x + hw * 0.6 > S.left && x - hw * 0.6 < S.right ? S.top : null;
+      return [S.left - hw * 0.6, S.right + hw * 0.6, S.top];
     }
     const p = STAGE.platforms[this.platform];
-    return p && Math.abs(x - p.x) <= p.w / 2 + hw * 0.3 ? p.y : null;
+    if (!p) return null;
+    return [p.x - p.w / 2 - hw * 0.3, p.x + p.w / 2 + hw * 0.3, p.y];
   }
 
-  land(platform, top, inp) {
+  land(platform, top) {
     const g = this.game;
     const impact = -this.vel.y;
-    if (this.hitstun > 0 && impact > 9) {
-      if (this.t - this.exoPressedAt < 0.25) {
-        // Tech: tapping EXO right before hitting the ground cancels the bounce.
+    const launched = this.state === 'hitstun' || (this.state === 'air' && this.tumble);
+    if (launched && impact > 8) {
+      if (this.t - this.shieldPressedAt < COMBAT.techWindow / 60) {
         this.hitstun = 0;
         this.tumble = false;
-        this.invuln = Math.max(this.invuln, 0.3);
+        this.invuln = 20;
+        this.touchDown(platform, impact);
+        this.landLag(4);
         g.effects.ring(this.pos.x, top + 0.1, 0x9ff7ff, 2, 0.3);
         g.popup(this.slot, 'TECH!');
-      } else {
-        this.vel.y = impact * 0.5;
+        return top;
+      }
+      if (this.state === 'hitstun' && impact > 12) {
+        this.vel.y = impact * 0.45;
         this.hitstun *= 0.8;
         g.effects.dust(this.pos.x, top, 10);
         g.audio.land(this.pos.x, true);
         return top;
       }
+      this.touchDown(platform, impact);
+      this.hitstun = 0;
+      this.landLag(24); // knocked down
+      return top;
     }
+    const st = this.state;
+    const m = this.move;
+    this.touchDown(platform, impact);
+    if (st === 'attack' && m && (this.moveAir || this.moveLeftGround)) this.landLag(m.landLag ?? 8);
+    else if (st === 'helpless') this.landLag(20);
+    else if (st === 'dodge' && this.dodge && this.dodge.kind === 'air') { this.dodge = null; this.landLag(DODGE.air.landLag); }
+    else if (st === 'air') this.setState('ground');
+    else if (st === 'hitstun') this.hitstun = Math.min(this.hitstun, 0.1);
+    return top;
+  }
+
+  touchDown(platform, impact) {
     this.grounded = true;
     this.platform = platform;
     this.vel.y = 0;
-    this.airJumps = this.op.airJumps;
-    this.exoReady = true;
+    this.airJumps = this.st.airJumps;
+    this.airDodgeReady = true;
     this.fastFall = false;
     this.tumble = false;
-    if (this.hitstun > 0) this.hitstun = Math.min(this.hitstun, 0.12);
     this.landSquash = clamp(impact / 22, 0.15, 1);
-    if (impact > 12) g.effects.dust(this.pos.x, top, 6);
-    g.audio.land(this.pos.x, impact > 20);
-    return top;
+    if (impact > 12) this.game.effects.dust(this.pos.x, this.pos.y, 6);
+    this.game.audio.land(this.pos.x, impact > 20);
   }
 
   checkBlast() {
@@ -477,26 +889,23 @@ export class Fighter {
     if (x < B.left || x > B.right || y < B.bottom || y > B.top) this.game.onKO(this);
   }
 
+  // ------------------------------------------------------------------ getting hit
+
+  // hit: { damage, kb, grow, ang, dirSign, attacker, source, throw }
   // Returns { result: 'hit' | 'blocked' | 'miss', launch }.
   takeHit(hit) {
-    if (this.dead || this.eliminated || this.invuln > 0 || this.dashTimer > 0 || this.onRevival) {
-      return { result: 'miss', launch: 0 };
-    }
+    if (this.dead || this.eliminated) return { result: 'miss', launch: 0 };
+    if (!hit.throw && this.intangible) return { result: 'miss', launch: 0 };
     const g = this.game;
-    if (this.shieldUp && hit.fromX !== undefined && Math.sign(hit.fromX - this.pos.x) === this.facing) {
-      this.shieldHP -= hit.damage * (hit.light ? 1.8 : 1.3);
-      this.vel.x -= this.facing * (hit.light ? 0.4 : 2.5);
-      if (this.shieldHP <= 0) {
-        this.shieldHP = 0;
-        this.shieldBroken = SHIELD.breakTime;
-        this.shieldUp = false;
-        this.hitstun = 0.6;
-        g.effects.sparks(this.pos.x + this.facing * 0.6, this.pos.y + 1, 0, 1, this.colors.accent, 24, 9);
-        g.audio.shieldBreak(this.pos.x);
-        g.popup(this.slot, 'SHIELD BROKEN');
-      }
+    if (!hit.throw && this.state === 'shield') {
+      this.shieldHP -= hit.damage * SHIELD.damageMult;
+      this.shieldStun = Math.floor(hit.damage * 0.8) + 2;
+      this.vel.x = hit.dirSign * (1 + hit.damage * 0.25);
+      if (this.shieldHP <= 0) this.breakShield();
       return { result: 'blocked', launch: 0 };
     }
+    if (this.holding) this.releaseGrab(false);
+    if (this.state === 'held' && !hit.throw && this.heldBy) this.heldBy.releaseGrab(false);
 
     const attacker = hit.attacker;
     this.percent = Math.min(999, this.percent + hit.damage);
@@ -505,45 +914,38 @@ export class Fighter {
       attacker.stats.damageDealt += hit.damage;
       this.lastHitBy = attacker;
       this.lastHitTime = g.time;
-      this.lastHitWeapon = hit.source;
+      this.lastHitMove = hit.source;
     }
 
-    let launch = ((hit.baseKB + this.percent * hit.growth) * (hit.kbMult || 1)) / this.op.weight;
-    let dx = hit.dirX;
-    let dy = hit.dirY;
-    let m = Math.hypot(dx, dy) || 1;
-    dx /= m;
-    dy /= m;
+    const launch = (hit.kb + this.percent * hit.grow * (0.5 + hit.damage / 20)) / this.st.weight;
+    const a = (hit.ang * Math.PI) / 180;
+    let dx = Math.cos(a) * hit.dirSign;
+    let dy = Math.sin(a);
+    if (this.grounded && dy < 0) dy = -dy * 0.6; // spikes on the ground pop up instead
+    if (this.grounded && dy < 0.2 && launch > 6) {
+      dy = 0.2;
+      const m = Math.hypot(dx, dy);
+      dx /= m;
+      dy /= m;
+    }
+    this.move = null;
+    this.zip = null;
+    this.dodge = null;
+    this.ledge = null;
+    this.charging = false;
+    this.heldBy = null;
+    this.vel.x = dx * launch;
+    this.vel.y = dy * launch;
+    this.hitstun = launch * COMBAT.hitstunPerLaunch + 0.05;
+    this.tumble = launch > COMBAT.tumbleAt;
     this.flash = 1;
-
-    if (hit.light) {
-      launch *= 0.35;
-      this.vel.x += dx * launch;
-      if (!this.grounded) this.vel.y += dy * launch * 0.6;
-      const sp = Math.hypot(this.vel.x, this.vel.y);
-      if (sp > PHYS.lightHitCap) {
-        this.vel.x *= PHYS.lightHitCap / sp;
-        this.vel.y *= PHYS.lightHitCap / sp;
-      }
-      this.hitstun = Math.max(this.hitstun, 0.06);
-      this.flash = 0.6;
-    } else {
-      if (this.grounded && dy < 0.25) {
-        dy = 0.25;
-        m = Math.hypot(dx, dy);
-        dx /= m;
-        dy /= m;
-      }
-      this.vel.x = dx * launch;
-      this.vel.y = dy * launch;
-      if (dy > 0 || launch > 4) this.leaveGround();
-      this.hitstun = launch * 0.03 + 0.05;
-      this.tumble = launch > 11;
-      this.exoReady = true;
-      this.knifeTimer = 0;
-      this.fastFall = false;
-      this.exoTimer = 0;
+    this.fastFall = false;
+    this.setState('hitstun');
+    if (dy > 0 || launch > 4) {
+      this.grounded = false;
+      this.platform = null;
     }
     return { result: 'hit', launch };
   }
 }
+

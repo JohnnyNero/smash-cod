@@ -2,22 +2,21 @@
 // state shape, so fighters and the CPU brain don't care where input comes from.
 
 export const BUTTONS = [
-  'jump', 'fire', 'ads', 'knife', 'grenade', 'ability', 'exo', 'reload',
+  'jump', 'attack', 'special', 'shield', 'grab', 'smash', 'swap',
   'start', 'confirm', 'back', 'down',
 ];
 
+// Smash-style layout. Keyboard is a fallback; two gamepads is the intended way to play.
 const KEYMAPS = {
   kb1: {
     left: ['KeyA'], right: ['KeyD'], up: ['KeyW'], down: ['KeyS'],
-    jump: ['KeyW', 'Space'], fire: ['KeyF'], knife: ['KeyG'], grenade: ['KeyH'],
-    reload: ['KeyR'], ability: ['KeyT'], exo: ['KeyC'], ads: ['KeyV'],
-    start: ['Escape'], confirm: ['KeyF', 'Space'], back: ['KeyG'],
+    jump: ['Space'], attack: ['KeyF'], special: ['KeyG'], shield: ['KeyH'], grab: ['KeyR'],
+    swap: ['KeyT'], start: ['Escape'], confirm: ['KeyF', 'Space'], back: ['KeyG'],
   },
   kb2: {
     left: ['ArrowLeft'], right: ['ArrowRight'], up: ['ArrowUp'], down: ['ArrowDown'],
-    jump: ['ArrowUp'], fire: ['Slash', 'Numpad0'], knife: ['Period', 'Numpad1'],
-    grenade: ['Comma', 'Numpad2'], reload: ['KeyP', 'Numpad6'], ability: ['Quote', 'Numpad4'],
-    exo: ['Semicolon', 'Numpad3'], ads: ['ShiftRight', 'Numpad5'],
+    jump: ['Quote', 'Numpad0'], attack: ['Slash', 'Numpad1'], special: ['Period', 'Numpad2'],
+    shield: ['Comma', 'Numpad3'], grab: ['Semicolon', 'Numpad4'], swap: ['KeyL', 'Numpad5'],
     start: ['Enter'], confirm: ['Enter', 'Slash'], back: ['Backspace', 'Period'],
   },
 };
@@ -27,7 +26,7 @@ const NAV_DIRS = ['up', 'down', 'left', 'right'];
 
 export function neutralState(id = 'none') {
   const s = {
-    id, connected: true, moveX: 0, moveY: 0, aimX: 0, aimY: 0, aimActive: false,
+    id, connected: true, moveX: 0, moveY: 0, smashX: 0, smashY: 0,
     held: {}, pressed: {}, nav: {}, navTimer: {},
   };
   for (const b of BUTTONS) { s.held[b] = false; s.pressed[b] = false; }
@@ -80,7 +79,7 @@ export class InputManager {
       const raw = {
         moveX: (any('right') ? 1 : 0) - (any('left') ? 1 : 0),
         moveY: (any('up') ? 1 : 0) - (any('down') ? 1 : 0),
-        aimX: 0, aimY: 0, aimActive: false, held: {},
+        held: {},
       };
       for (const b of BUTTONS) raw.held[b] = b === 'down' ? any('down') : !!map[b] && any(b);
       this.apply(this.devices.get(id), raw, dt);
@@ -90,7 +89,6 @@ export class InputManager {
     for (const [id, src] of this.virtual) {
       const dev = this.devices.get(id);
       this.apply(dev, src.raw, dt);
-      dev.autoFire = !!src.raw.autoFire;
     }
 
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -111,14 +109,17 @@ export class InputManager {
       if (btn(15)) mx = 1;
       if (btn(12)) my = 1;
       if (btn(13)) my = -1;
-      const ax = pad.axes[2] || 0;
-      const ay = -(pad.axes[3] || 0);
-      const aimActive = Math.hypot(ax, ay) > 0.4;
+      // Right stick = smash attacks (like Smash's C-stick).
+      const cx = pad.axes[2] || 0;
+      const cy = -(pad.axes[3] || 0);
+      const cmag = Math.hypot(cx, cy);
+      // Standard mapping: A attack, B special, X/Y jump, LB grab, RB/LT/RT shield, Select swap.
       const raw = {
-        moveX: mx, moveY: my, aimX: ax, aimY: ay, aimActive,
+        moveX: mx, moveY: my,
+        smashX: cmag > 0.7 ? cx / cmag : 0, smashY: cmag > 0.7 ? cy / cmag : 0,
         held: {
-          jump: btn(0), exo: btn(1), knife: btn(2), reload: btn(3),
-          ability: btn(4), grenade: btn(5), ads: btn(6), fire: btn(7),
+          attack: btn(0), special: btn(1), jump: btn(2) || btn(3), grab: btn(4),
+          shield: btn(5) || btn(6) || btn(7), smash: cmag > 0.7, swap: btn(8),
           start: btn(9), confirm: btn(0), back: btn(1), down: my < -0.6,
         },
       };
@@ -141,9 +142,10 @@ export class InputManager {
     }
     dev.moveX = raw.moveX;
     dev.moveY = raw.moveY;
-    dev.aimX = raw.aimX;
-    dev.aimY = raw.aimY;
-    dev.aimActive = raw.aimActive;
+    if (raw.held.smash) {
+      dev.smashX = raw.smashX || 0;
+      dev.smashY = raw.smashY || 0;
+    }
 
     // Menu navigation with key repeat.
     const want = {
