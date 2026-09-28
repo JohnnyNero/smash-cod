@@ -3,10 +3,11 @@
 // hitboxes/projectiles between fighters. Everything is counted in 60 fps frames.
 //
 // States: ground, air, jumpsquat, attack, landlag, shield, shieldbreak, dodge, holding, held,
-// hitstun, ledge, getup, helpless.
+// hitstun, ledge, getup, helpless, sleep.
 
 import { PHYS, COMBAT, SHIELD, DODGE, LEDGE, STAGE } from './config.js';
-import { THROWS, PUMMEL, buildMoveset } from './data/moves.js';
+import { THROWS, PUMMEL } from './data/moves.js';
+import { buildMoveset } from './data/moveset.js';
 import { fighterStats } from './data/pokemon.js';
 
 const DT = 1 / 60;
@@ -42,13 +43,15 @@ export class Fighter {
       hitstun: 0, tumble: false, percent: 0, invuln: 0, flash: 0,
       lastHitBy: null, lastHitTime: -99, lastHitMove: null,
       move: null, moveF: 0, curF: -1, charge: 0, charging: false, chargeDone: false, chargeMult: 1,
-      hitSet: new Set(), zip: null, moveAir: false, moveLeftGround: false, landLagF: 0,
+      hitTimes: new Map(), zip: null, moveAir: false, moveLeftGround: false, landLagF: 0,
       shieldHP: SHIELD.hp, shieldStun: 0, dodge: null,
       holding: null, heldBy: null, holdTimer: 0, pummelCd: 0,
       ledge: null, ledgeInvuln: 0, ledgeCooldown: 0, getupKind: null, getupFrom: null,
       shieldPressedAt: -99, prevMag: 0, flickT: 99, flickX: 0, flickY: 0, sx: 0, sy: 0,
       landSquash: 0, t: 0,
+      boosts: {}, sleepFrames: 0, seed: null, destinyBond: 0,
     });
+    this.st = fighterStats(this.sp);
     this.pp = {};
     for (const [slot, m] of Object.entries(this.moveset.specials)) this.pp[slot] = m.pp;
     this.pos.x = x;
@@ -107,6 +110,8 @@ export class Fighter {
     if (this.ledgeCooldown > 0) this.ledgeCooldown--;
     if (this.dropTimer > 0) this.dropTimer--;
     if (this.state !== 'shield') this.shieldHP = Math.min(SHIELD.hp, this.shieldHP + SHIELD.regen);
+    if (this.destinyBond > 0) this.destinyBond--;
+    if (this.seed) this.tickSeed();
     this.readInput(inp);
 
     if (this.onRevival) {
@@ -167,6 +172,9 @@ export class Fighter {
         break;
       case 'getup':
         this.runGetup();
+        break;
+      case 'sleep':
+        this.runSleep();
         break;
       default:
         break;
@@ -325,7 +333,7 @@ export class Fighter {
     this.move = m;
     this.moveF = 0;
     this.curF = -1;
-    this.hitSet = new Set();
+    this.hitTimes = new Map();
     this.charge = 0;
     this.charging = false;
     this.chargeDone = false;
@@ -407,8 +415,8 @@ export class Fighter {
         break;
       }
       case 'rise':
-        this.vel.y = Math.max(this.vel.y, 15);
-        this.vel.x = this.sx * 4;
+        this.vel.y = Math.max(this.vel.y, 16);
+        this.vel.x = this.sx * Math.max(5, this.st.airSpeed);
         this.fastFall = false;
         this.leaveGround();
         g.effects.ring(this.pos.x, this.pos.y, this.colors.accent, 1.6, 0.3);
@@ -431,8 +439,27 @@ export class Fighter {
         g.audio.dash(this.pos.x);
         break;
       }
+      case 'dash': {
+        // Charge straight ahead (Flare Blitz, Volt Switch); can carry you off the stage.
+        const vy = !this.grounded && ev.air ? ev.air.y : 0;
+        this.zip = { vx: this.facing * ev.speed, vy, frames: ev.frames };
+        this.fastFall = false;
+        g.effects.boost(this.pos.x, this.pos.y + this.h * 0.5, -this.facing, 0, this.colors.accent, true);
+        g.audio.dash(this.pos.x);
+        break;
+      }
       case 'projectile':
         g.spawnProjectile(this, ev.proj, this.move);
+        break;
+      case 'boost':
+        this.applyBoosts(ev.boosts);
+        break;
+      case 'destinybond':
+        this.destinyBond = ev.frames;
+        g.popup(this.slot, 'DESTINY BOND', 'move', '#b07aff');
+        break;
+      case 'fx':
+        g.moveFx(this, ev.fx);
         break;
       case 'release':
         if (this.holding) g.throwHit(this, this.holding, this.move.throwDef);
@@ -751,7 +778,7 @@ export class Fighter {
 
     if (!this.grounded && !noGrav) {
       const launched = this.state === 'hitstun';
-      this.vel.y -= PHYS.gravity * (launched ? PHYS.hitstunGravity : 1) * DT;
+      this.vel.y -= PHYS.gravity * st.gravity * (launched ? PHYS.hitstunGravity : 1) * DT;
       const maxFall = st.maxFall * (this.fastFall ? PHYS.fastFallMult : 1);
       if (this.fastFall && this.vel.y < 0) this.vel.y = Math.min(this.vel.y, -maxFall);
       else if (this.vel.y < -maxFall) this.vel.y = approach(this.vel.y, -maxFall, 60 * DT);
@@ -887,6 +914,75 @@ export class Fighter {
     const B = STAGE.blast;
     const { x, y } = this.pos;
     if (x < B.left || x > B.right || y < B.bottom || y > B.top) this.game.onKO(this);
+  }
+
+  // ------------------------------------------------------------------ stats & status
+
+  // Showdown stat stages (-6..+6). They last until this Pokémon is KO'd (or switched, phase 3).
+  applyBoosts(boosts) {
+    const parts = [];
+    for (const [k, v] of Object.entries(boosts)) {
+      this.boosts[k] = clamp((this.boosts[k] || 0) + v, -6, 6);
+      parts.push(`${v > 0 ? '+' : ''}${v} ${k.toUpperCase()}`);
+    }
+    this.st = fighterStats(this.sp, this.boosts);
+    this.game.onBoost(this, parts.join(' '));
+  }
+
+  // Multi-hit bookkeeping: a hitbox can hit a target once per `group`, or every `rehit` frames.
+  canHit(target, hb) {
+    const key = `${target.slot}:${hb.group || 0}`;
+    const last = this.hitTimes.get(key);
+    return last === undefined || (hb.rehit && this.curF - last >= hb.rehit);
+  }
+
+  markHit(target, hb) {
+    this.hitTimes.set(`${target.slot}:${hb.group || 0}`, this.curF);
+  }
+
+  // effect: 'sleep' | 'seed'. Returns true if it took hold.
+  applyStatus(effect, by) {
+    if (this.dead || this.intangible) return false;
+    if (effect === 'sleep') {
+      if (this.state === 'sleep' || this.state === 'held' || this.state === 'ledge') return false;
+      if (this.holding) this.releaseGrab(false);
+      this.move = null;
+      this.zip = null;
+      this.dodge = null;
+      this.sleepFrames = Math.min(200, 70 + this.percent * 0.6);
+      this.setState('sleep');
+      return true;
+    }
+    if (effect === 'seed') {
+      this.seed = { frames: 360, by, tick: 0 };
+      return true;
+    }
+    return false;
+  }
+
+  runSleep() {
+    this.vel.x *= 0.9;
+    this.sleepFrames--;
+    const inp = this.inp;
+    if (inp.pressed.attack || inp.pressed.special || inp.pressed.jump || inp.pressed.shield || this.flickT === 0) this.sleepFrames -= 6;
+    if (this.sleepFrames <= 0) {
+      this.toNeutral();
+      this.game.popup(this.slot, 'WOKE UP');
+    }
+  }
+
+  // Leech Seed: every half second, drain a little % from this fighter into the seeder.
+  tickSeed() {
+    const s = this.seed;
+    s.frames--;
+    if (s.frames <= 0 || !s.by.active) { this.seed = null; return; }
+    if (++s.tick % 30 === 0) {
+      this.percent = Math.min(999, this.percent + 1.2);
+      this.stats.damageTaken += 1.2;
+      s.by.percent = Math.max(0, s.by.percent - 1.2);
+      s.by.stats.damageDealt += 1.2;
+      this.game.onSeedTick(this, s.by);
+    }
   }
 
   // ------------------------------------------------------------------ getting hit

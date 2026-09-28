@@ -139,6 +139,7 @@ export class CreatureModel {
     let rotY = 0;
     let curl = 1;
     let aura = 0;
+    let auraColor = null;
     let spin = null; // spinner z target; null = settle upright
     const p = v.p;
     const run = Math.min(1, Math.abs(v.vx) / (v.runSpeed || 8));
@@ -199,6 +200,10 @@ export class CreatureModel {
     } else if (v.state === 'holding') {
       o.armL.x = o.armR.x = -1.5;
       o.torso.x = 0.15;
+    } else if (v.state === 'sleep') {
+      rotX = -Math.PI / 2; // lying on its back
+      bodyY = -this.h * 0.3 + Math.sin(t * 2) * 0.02;
+      o.armL.z = 0.6; o.armR.z = -0.6;
     } else if (v.state === 'held') {
       o.armL.x = -2.6 + Math.sin(t * 22) * 0.4;
       o.armR.x = -2.6 + Math.cos(t * 22) * 0.4;
@@ -325,6 +330,85 @@ export class CreatureModel {
           o.tail.x = 2.8;
           o.armL.x = o.armR.x = -2.5;
           break;
+        case 'breath': // Flamethrower
+          o.torso.x = 0.25 * pulse(p, 0.15, 0.85);
+          o.head.x = 0.35 * pulse(p, 0.15, 0.85);
+          o.armL.x = o.armR.x = -0.8 * pulse(p, 0.1, 0.85);
+          aura = 0.4 * pulse(p, 0.2, 0.8);
+          auraColor = 0xff6a20;
+          break;
+        case 'blitz': // Flare Blitz
+          curl = 0.8;
+          aura = 1;
+          auraColor = 0xff5a10;
+          o.torso.x = 0.9;
+          o.armL.x = o.armR.x = 0.9;
+          break;
+        case 'fly':
+          if (v.zipDir) spin = (Math.atan2(v.zipDir.y, Math.abs(v.zipDir.x)) - Math.PI / 2) * (v.facing > 0 ? 1 : -1) * 0.6;
+          o.armL.x = o.armR.x = -2.8;
+          o.legL.x = o.legR.x = 0.6;
+          break;
+        case 'claw': // Dragon Claw: two slashes
+          o.armR.x = -2.6 + 3.2 * ramp(p, 0.18, 0.32);
+          o.armL.x = -2.6 + 3.2 * ramp(p, 0.42, 0.55);
+          o.torso.y = 0.4 * pulse(p, 0.15, 0.35) - 0.4 * pulse(p, 0.4, 0.6);
+          aura = pulse(p, 0.4, 0.6) * 0.7;
+          auraColor = 0x7a4aff;
+          break;
+        case 'cannon': // Hydro Pump / Ice Beam
+          o.torso.x = -0.15 - 0.1 * pulse(p, 0.25, 0.7);
+          bodyY = -0.05 * pulse(p, 0.2, 0.7);
+          o.armL.z = 0.4; o.armR.z = -0.4;
+          aura = 0.5 * pulse(p, 0.2, 0.7);
+          auraColor = 0x5ab0ff;
+          break;
+        case 'shellspin': // Rapid Spin
+          curl = 0.85;
+          rotY = t * 30;
+          o.armL.x = o.armR.x = 0.5;
+          break;
+        case 'setup': // Swords Dance, Shell Smash, Destiny Bond
+          o.armL.x = o.armR.x = -2.8 * pulse(p, 0.1, 0.9);
+          o.head.x = -0.3 * pulse(p, 0.1, 0.9);
+          rotY = Math.PI * 2 * ramp(p, 0.3, 0.7);
+          aura = pulse(p, 0.3, 0.9);
+          auraColor = v.anim === 'setup' && v.bond ? 0x9a4aff : 0xff6a4a;
+          break;
+        case 'beam': // Giga Drain
+          o.armL.x = o.armR.x = -1.3 * pulse(p, 0.2, 0.8);
+          o.torso.x = 0.25 * pulse(p, 0.2, 0.8);
+          aura = 0.6 * pulse(p, 0.25, 0.6);
+          auraColor = 0x7acc4a;
+          break;
+        case 'powder':
+          o.armL.z = 1.2 * pulse(p, 0.1, 0.8); o.armR.z = -1.2 * pulse(p, 0.1, 0.8);
+          o.tail.x = 0.6 * Math.sin(t * 25) * pulse(p, 0.1, 0.8);
+          break;
+        case 'hypno':
+          o.armL.x = -1.5 + Math.sin(t * 14) * 0.4;
+          o.armR.x = -1.5 - Math.sin(t * 14) * 0.4;
+          o.head.x = 0.2;
+          aura = 0.5 * pulse(p, 0.25, 0.6);
+          auraColor = 0xb07aff;
+          break;
+        case 'burst': // Sludge Wave
+          curl = 1 - 0.2 * pulse(p, 0, 0.15) + 0.25 * pulse(p, 0.15, 0.45);
+          o.armL.z = 1.4 * pulse(p, 0.15, 0.6); o.armR.z = -1.4 * pulse(p, 0.15, 0.6);
+          aura = pulse(p, 0.15, 0.45);
+          auraColor = 0xb04ad0;
+          break;
+        case 'flurry': // Close Combat
+          if (p < 0.55) {
+            o.armR.x = -1.7 * Math.abs(Math.sin(p * 45));
+            o.armL.x = -1.7 * Math.abs(Math.cos(p * 45));
+          } else {
+            o.armR.x = -1.9 * pulse(p, 0.55, 0.75);
+            o.torso.x = 0.4 * pulse(p, 0.55, 0.75);
+          }
+          aura = 0.5;
+          auraColor = 0x4a8aff;
+          break;
         default:
           o.armR.x = -1.5 * pulse(p, 0.1, 0.5);
           break;
@@ -365,6 +449,7 @@ export class CreatureModel {
     this.yaw = damp(this.yaw, targetYaw, 16, dt);
     this.facer.rotation.y = this.yaw;
 
+    this.auraMat.color.set(auraColor ?? this.colors.accent);
     this.aura.visible = aura > 0.02;
     this.auraMat.opacity = 0.45 * aura * (0.8 + Math.random() * 0.4);
     this.shield.visible = v.state === 'shield';
@@ -382,6 +467,9 @@ export class CreatureModel {
     else if (v.invuln) flash = Math.max(flash, 0.25 + 0.2 * Math.sin(t * 25));
     else if (v.state === 'helpless') { flash = 0.25; flashColor = 0x000000; }
     else if (v.charging) { flash = 0.2 + 0.2 * Math.sin(t * 30); flashColor = 0xffe070; }
+    else if (v.bond) { flash = 0.25 + 0.15 * Math.sin(t * 8); flashColor = 0x8a3aff; }
+    else if (v.seeded && Math.sin(t * 6) > 0.3) { flash = 0.25; flashColor = 0x6adc3a; }
+    else if (v.boosted) { flash = 0.12 + 0.08 * Math.sin(t * 5); flashColor = 0xff5a3a; }
     this.setFlash(Math.min(1, flash), flashColor);
     this.tag.visible = v.showTag;
   }

@@ -16,6 +16,8 @@ export const PHYS = {
 
 export const COMBAT = {
   stab: 1.3, // same-type attack bonus, tuned down from 1.5 for real time
+  superEffective: 1.6, // Showdown 2x; 4x becomes 1.6^2
+  resisted: 0.6, // Showdown 0.5x
   hitstunPerLaunch: 0.03, // seconds of hitstun per unit of launch speed
   tumbleAt: 11, // launch speeds above this make you tumble
   hitstopBase: 3,
@@ -58,7 +60,7 @@ export const STAGE = {
     { x: 4.6, y: 3.1, w: 4.2 },
     { x: 0, y: 6.2, w: 4.2 },
   ],
-  blast: { left: -21, right: 21, top: 18.5, bottom: -11 },
+  blast: { left: -19.5, right: 19.5, top: 17.5, bottom: -11 },
   spawns: [-4.5, 4.5],
   revivalY: 9.5,
 };

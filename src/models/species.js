@@ -23,6 +23,26 @@ const group = (x = 0, y = 0, z = 0) => {
   g.position.set(x, y, z);
   return g;
 };
+const cyl = (rt, rb, h, mat, seg = 8) => mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
+const cone = (r, h, mat, seg = 8) => mesh(new THREE.ConeGeometry(r, h, seg), mat);
+const at = (obj, x, y, z, rx = 0, ry = 0, rz = 0) => {
+  obj.position.set(x, y, z);
+  obj.rotation.set(rx, ry, rz);
+  return obj;
+};
+
+// Shared: a pair of eyes (dark with a glint) on a head group.
+function eyes(head, M, x, y, z, r = 0.05, color) {
+  for (const side of [-1, 1]) {
+    head.add(at(ball(r, color || M.black, 1, 1.2, 0.7, 8), side * x, y, z));
+    head.add(at(ball(r * 0.35, M.white, 1, 1, 1, 6), side * x + r * 0.3, y + r * 0.4, z + r * 0.6));
+  }
+}
+
+// Shared: a player-coloured bandana around the neck so P1/P2 are easy to tell apart.
+function bandana(parent, M, y, r, z = 0) {
+  parent.add(at(cyl(r, r * 1.15, 0.08, M.team, 10), 0, y, z));
+}
 
 function pikachu(model, colors) {
   const M = {
@@ -152,4 +172,379 @@ function pikachu(model, colors) {
   };
 }
 
-export const BUILDERS = { pikachu };
+function charizard(model, colors) {
+  const M = {
+    orange: model.mat(0xf08a30, { r: 0.6 }),
+    cream: model.mat(0xf3dc9a),
+    wing: model.mat(0x2f8aa0, { r: 0.7 }),
+    black: model.mat(0x151515, { r: 0.4 }),
+    white: model.mat(0xffffff, { r: 0.3 }),
+    horn: model.mat(0xf3dc9a, { r: 0.5 }),
+    team: model.mat(colors.main, { r: 0.6 }),
+  };
+  const j = model.j;
+  const hips = group(0, 0.62, 0);
+  model.body.add(hips);
+  j.hips = hips;
+  for (const side of [-1, 1]) {
+    const leg = group(side * 0.22, 0, 0);
+    leg.add(at(ball(0.2, M.orange, 1, 1.2, 1.1), 0, -0.12, 0));
+    leg.add(at(ball(0.15, M.orange, 1, 0.55, 1.6), 0, -0.5, 0.1));
+    for (const c of [-1, 0, 1]) leg.add(at(cone(0.03, 0.1, M.white, 5), c * 0.06, -0.52, 0.34, Math.PI / 2));
+    hips.add(leg);
+    j[side < 0 ? 'legR' : 'legL'] = leg;
+  }
+  const torso = group();
+  hips.add(torso);
+  j.torso = torso;
+  torso.add(at(ball(1, M.orange, 0.42, 0.52, 0.38, 12), 0, 0.42, 0));
+  torso.add(at(ball(1, M.cream, 0.3, 0.42, 0.12, 10), 0, 0.38, 0.28));
+  torso.add(at(cyl(0.12, 0.15, 0.35, M.orange), 0, 0.92, 0.08, 0.35));
+  bandana(torso, M, 0.82, 0.17, 0.05);
+
+  const head = group(0, 1.08, 0.16);
+  torso.add(head);
+  j.head = head;
+  head.add(at(ball(1, M.orange, 0.22, 0.2, 0.28, 10), 0, 0.1, 0.06));
+  head.add(at(ball(1, M.orange, 0.15, 0.12, 0.18, 8), 0, 0.03, 0.3));
+  eyes(head, M, 0.12, 0.16, 0.24, 0.045);
+  head.add(at(ball(0.015, M.black, 1, 1, 1, 5), 0.05, 0.08, 0.47));
+  head.add(at(ball(0.015, M.black, 1, 1, 1, 5), -0.05, 0.08, 0.47));
+  for (const side of [-1, 1]) {
+    const horn = group(side * 0.1, 0.24, -0.1);
+    horn.rotation.x = -1.1;
+    horn.add(at(cone(0.045, 0.26, M.horn, 6), 0, 0.13, 0));
+    head.add(horn);
+    j[side < 0 ? 'earR' : 'earL'] = horn;
+  }
+  for (const side of [-1, 1]) {
+    const arm = group(side * 0.36, 0.68, 0.12);
+    arm.add(at(cyl(0.07, 0.06, 0.38, M.orange), 0, -0.17, 0));
+    arm.add(at(ball(0.08, M.orange), 0, -0.37, 0));
+    arm.rotation.x = -0.5;
+    torso.add(arm);
+    j[side < 0 ? 'armR' : 'armL'] = arm;
+  }
+  // Wings: swept back so they read in profile; flapped in update().
+  const wings = [];
+  for (const side of [-1, 1]) {
+    const w = group(side * 0.22, 0.78, -0.26);
+    w.rotation.set(-0.35, 0, side * 0.35);
+    w.add(at(cyl(0.035, 0.035, 0.95, M.orange, 6), 0, 0.45, -0.2, -0.45));
+    w.add(at(mesh(new THREE.BoxGeometry(0.04, 0.8, 0.7), M.wing), side * 0.02, 0.45, -0.45, 0.35));
+    w.add(at(mesh(new THREE.BoxGeometry(0.03, 0.5, 0.45), M.wing), side * 0.02, 0.15, -0.72, 0.9));
+    torso.add(w);
+    wings.push({ g: w, side });
+  }
+  // Tail with the flame on the tip.
+  const tail = group(0, 0.12, -0.3);
+  tail.rotation.x = -2.0;
+  tail.add(at(cone(0.13, 0.85, M.orange, 8), 0, 0.42, 0));
+  const flameMat = glowMat(0xffa030, 0.95);
+  const flame = at(cone(0.13, 0.4, flameMat, 7), 0, 0.95, 0);
+  const flameCore = at(cone(0.07, 0.25, glowMat(0xfff0a0, 1), 6), 0, 0.9, 0);
+  tail.add(flame, flameCore);
+  torso.add(tail);
+  j.tail = tail;
+
+  return {
+    update(v, t) {
+      const flying = !v.grounded;
+      const speed = flying ? 12 : 3;
+      const amp = flying ? 0.5 : 0.12;
+      for (const w of wings) w.g.rotation.z = w.side * (0.35 + Math.sin(t * speed) * amp);
+      flame.scale.set(1, 0.8 + Math.random() * 0.5, 1);
+      flameCore.scale.set(1, 0.8 + Math.random() * 0.4, 1);
+    },
+  };
+}
+
+function blastoise(model, colors) {
+  const M = {
+    blue: model.mat(0x5a8ad8, { r: 0.6 }),
+    cream: model.mat(0xf0dea8),
+    shell: model.mat(0x8a5a36, { r: 0.7 }),
+    rim: model.mat(0xe8d8b0),
+    metal: model.mat(0x9aa3ad, { r: 0.35, m: 0.7 }),
+    dark: model.mat(0x2a2e36),
+    black: model.mat(0x151515, { r: 0.4 }),
+    white: model.mat(0xffffff, { r: 0.3 }),
+    team: model.mat(colors.main, { r: 0.6 }),
+  };
+  const j = model.j;
+  const hips = group(0, 0.5, 0);
+  model.body.add(hips);
+  j.hips = hips;
+  for (const side of [-1, 1]) {
+    const leg = group(side * 0.26, 0, 0.02);
+    leg.add(at(ball(0.2, M.blue, 1, 1.15, 1), 0, -0.12, 0));
+    leg.add(at(ball(0.17, M.blue, 1, 0.5, 1.4), 0, -0.4, 0.08));
+    hips.add(leg);
+    j[side < 0 ? 'legR' : 'legL'] = leg;
+  }
+  const torso = group();
+  hips.add(torso);
+  j.torso = torso;
+  torso.add(at(ball(1, M.blue, 0.5, 0.55, 0.45, 12), 0, 0.45, 0));
+  torso.add(at(ball(1, M.cream, 0.4, 0.46, 0.14, 10), 0, 0.42, 0.34));
+  torso.add(at(ball(1, M.shell, 0.58, 0.6, 0.36, 12), 0, 0.5, -0.2));
+  torso.add(at(ball(1, M.rim, 0.61, 0.63, 0.12, 12), 0, 0.5, -0.02));
+  bandana(torso, M, 0.9, 0.24, 0.02);
+  // Shell cannons pointing forward over the shoulders.
+  for (const side of [-1, 1]) {
+    const c = group(side * 0.34, 0.92, -0.12);
+    c.rotation.x = 1.15;
+    c.add(at(cyl(0.1, 0.12, 0.6, M.metal, 10), 0, 0.28, 0));
+    c.add(at(cyl(0.07, 0.07, 0.04, M.dark, 10), 0, 0.59, 0));
+    torso.add(c);
+  }
+  const head = group(0, 0.95, 0.1);
+  torso.add(head);
+  j.head = head;
+  head.add(at(ball(0.28, M.blue, 1, 0.9, 1, 10), 0, 0.12, 0));
+  eyes(head, M, 0.12, 0.18, 0.23, 0.045);
+  head.add(at(mesh(new THREE.BoxGeometry(0.16, 0.015, 0.02), M.black), 0, 0.03, 0.27));
+  for (const side of [-1, 1]) {
+    const ear = group(side * 0.2, 0.3, -0.02);
+    ear.rotation.z = -side * 0.4;
+    ear.add(at(cone(0.06, 0.14, M.blue, 6), 0, 0.06, 0));
+    head.add(ear);
+    j[side < 0 ? 'earR' : 'earL'] = ear;
+  }
+  for (const side of [-1, 1]) {
+    const arm = group(side * 0.5, 0.62, 0.05);
+    arm.add(at(cyl(0.11, 0.1, 0.32, M.blue), 0, -0.14, 0));
+    arm.add(at(ball(0.12, M.blue), 0, -0.32, 0));
+    arm.rotation.x = -0.3;
+    torso.add(arm);
+    j[side < 0 ? 'armR' : 'armL'] = arm;
+  }
+  const tail = group(0, 0.05, -0.42);
+  tail.add(at(ball(0.1, M.blue, 1, 0.8, 1.3), 0, 0, -0.05));
+  torso.add(tail);
+  j.tail = tail;
+  return {};
+}
+
+function venusaur(model, colors) {
+  const M = {
+    teal: model.mat(0x5ab0a0, { r: 0.6 }),
+    spot: model.mat(0x3a7a78),
+    leaf: model.mat(0x2f8a3e, { r: 0.7 }),
+    trunk: model.mat(0x7a5a3a),
+    petal: model.mat(0xf07888, { r: 0.6 }),
+    petalDark: model.mat(0xd8506a, { r: 0.6 }),
+    yellow: model.mat(0xf6d84a),
+    black: model.mat(0x151515, { r: 0.4 }),
+    white: model.mat(0xffffff, { r: 0.3 }),
+    red: model.mat(0xc83a3a, { r: 0.4 }),
+    team: model.mat(colors.main, { r: 0.6 }),
+  };
+  const j = model.j;
+  const hips = group(0, 0.46, 0);
+  model.body.add(hips);
+  j.hips = hips;
+  const torso = group();
+  hips.add(torso);
+  j.torso = torso;
+  torso.add(at(ball(1, M.teal, 0.55, 0.4, 0.72, 12), 0, 0.25, 0));
+  for (const [x, y, z] of [[0.45, 0.3, 0.2], [-0.45, 0.3, 0.2], [0.42, 0.22, -0.3], [-0.42, 0.22, -0.3], [0.3, 0.52, -0.1], [-0.3, 0.52, -0.1]]) {
+    torso.add(at(ball(0.1, M.spot, 1, 0.6, 1.2, 6), x, y, z));
+  }
+  bandana(torso, M, 0.3, 0.36, 0.5);
+  // Back legs (legL/R) and front legs (armL/R) so the run cycle becomes a gait.
+  for (const side of [-1, 1]) {
+    const leg = group(side * 0.36, 0, -0.38);
+    leg.add(at(cyl(0.16, 0.15, 0.4, M.teal), 0, -0.2, 0));
+    leg.add(at(ball(0.16, M.teal, 1, 0.5, 1.3), 0, -0.42, 0.06));
+    hips.add(leg);
+    j[side < 0 ? 'legR' : 'legL'] = leg;
+    const front = group(side * 0.38, 0.05, 0.4);
+    front.add(at(cyl(0.16, 0.15, 0.45, M.teal), 0, -0.24, 0));
+    front.add(at(ball(0.16, M.teal, 1, 0.5, 1.3), 0, -0.47, 0.06));
+    for (const c of [-1, 1]) front.add(at(cone(0.03, 0.08, M.white, 5), c * 0.06, -0.5, 0.26, Math.PI / 2));
+    torso.add(front);
+    j[side < 0 ? 'armR' : 'armL'] = front;
+  }
+  const head = group(0, 0.32, 0.62);
+  torso.add(head);
+  j.head = head;
+  head.add(at(ball(1, M.teal, 0.36, 0.26, 0.3, 10), 0, 0.05, 0.12));
+  eyes(head, M, 0.17, 0.12, 0.34, 0.05, M.red);
+  head.add(at(mesh(new THREE.BoxGeometry(0.3, 0.02, 0.02), M.black), 0, -0.05, 0.41));
+  for (const side of [-1, 1]) {
+    const ear = group(side * 0.22, 0.25, 0.05);
+    ear.rotation.z = -side * 0.5;
+    ear.add(at(cone(0.07, 0.16, M.teal, 6), 0, 0.07, 0));
+    head.add(ear);
+    j[side < 0 ? 'earR' : 'earL'] = ear;
+  }
+  // The flower on its back doubles as the "tail" joint, so it sways and whips in attacks.
+  const flower = group(0, 0.55, -0.08);
+  flower.add(at(cyl(0.16, 0.2, 0.3, M.trunk), 0, 0.1, 0));
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + 0.3;
+    const leaf = group(0, 0.15, 0);
+    leaf.rotation.y = a;
+    leaf.add(at(mesh(new THREE.BoxGeometry(0.28, 0.03, 0.7), M.leaf), 0, 0, 0.42, -0.25));
+    flower.add(leaf);
+  }
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    const petal = group(0, 0.35, 0);
+    petal.rotation.y = a;
+    petal.add(at(ball(1, i % 2 ? M.petal : M.petalDark, 0.2, 0.06, 0.34, 8), 0, 0.02, 0.3, -0.35));
+    flower.add(petal);
+  }
+  flower.add(at(ball(0.13, M.yellow, 1, 0.8, 1, 8), 0, 0.42, 0));
+  torso.add(flower);
+  j.tail = flower;
+  return {};
+}
+
+function gengar(model, colors) {
+  const M = {
+    purple: model.mat(0x6a4aa0, { r: 0.6 }),
+    dark: model.mat(0x4a3278),
+    white: model.mat(0xffffff, { r: 0.3 }),
+    black: model.mat(0x151515, { r: 0.4 }),
+    eye: model.mat(0xff2a3a, { e: 0xff1a2a, ei: 1.5 }),
+    team: model.mat(colors.main, { r: 0.6 }),
+  };
+  const j = model.j;
+  const hips = group(0, 0.26, 0);
+  model.body.add(hips);
+  j.hips = hips;
+  for (const side of [-1, 1]) {
+    const leg = group(side * 0.26, 0, 0.02);
+    leg.add(at(ball(0.13, M.purple, 1, 1, 1), 0, -0.06, 0));
+    leg.add(at(ball(0.13, M.purple, 1, 0.5, 1.5), 0, -0.2, 0.06));
+    hips.add(leg);
+    j[side < 0 ? 'legR' : 'legL'] = leg;
+  }
+  const torso = group();
+  hips.add(torso);
+  j.torso = torso;
+  torso.add(at(ball(0.56, M.purple, 1, 0.95, 0.9, 12), 0, 0.38, 0));
+  for (let i = 0; i < 6; i++) {
+    const a = -0.9 + i * 0.36;
+    torso.add(at(cone(0.09, 0.3, M.purple, 6), Math.sin(a) * 0.35, 0.52 + Math.cos(a) * 0.3, -0.38, -0.9, 0, -a * 0.8));
+  }
+  // The face is the "head" joint so it can still nod and tilt.
+  const head = group(0, 0.4, 0.3);
+  torso.add(head);
+  j.head = head;
+  for (const side of [-1, 1]) {
+    head.add(at(ball(0.1, M.eye, 1.1, 0.7, 0.5, 8), side * 0.18, 0.14, 0.2, 0, 0, side * 0.35));
+    head.add(at(ball(0.03, M.white, 1, 1, 1, 6), side * 0.18, 0.13, 0.25));
+  }
+  // Wide grin: a curved row of teeth sunk into the body surface.
+  for (let i = -3; i <= 3; i++) {
+    const a = i * 0.13;
+    const x = Math.sin(a) * 0.5;
+    const z = Math.sqrt(1 - (x / 0.56) ** 2) * 0.5 - 0.3 + 0.01; // on the body surface
+    head.add(at(mesh(new THREE.BoxGeometry(0.075, 0.09, 0.04), M.white), x, -0.1 + Math.abs(i) * 0.012, z, 0, a, 0));
+  }
+  for (const side of [-1, 1]) {
+    const ear = group(side * 0.3, 0.8, -0.05);
+    ear.rotation.z = -side * 0.35;
+    ear.add(at(cone(0.13, 0.36, M.purple, 6), 0, 0.14, 0));
+    if (side > 0) ear.add(at(mesh(new THREE.TorusGeometry(0.1, 0.03, 6, 12), M.team), 0, 0.04, 0, Math.PI / 2)); // team ribbon
+    torso.add(ear);
+    j[side < 0 ? 'earR' : 'earL'] = ear;
+  }
+  for (const side of [-1, 1]) {
+    const arm = group(side * 0.5, 0.4, 0.1);
+    arm.add(at(cyl(0.08, 0.07, 0.24, M.purple), 0, -0.1, 0));
+    for (const c of [-1, 0, 1]) arm.add(at(cone(0.03, 0.09, M.purple, 5), c * 0.04, -0.26, 0.02, Math.PI));
+    arm.rotation.z = side * 0.3;
+    torso.add(arm);
+    j[side < 0 ? 'armR' : 'armL'] = arm;
+  }
+  const tail = group(0, 0.12, -0.45);
+  tail.rotation.x = -1.7;
+  tail.add(at(cone(0.1, 0.3, M.purple, 6), 0, 0.12, 0));
+  torso.add(tail);
+  j.tail = tail;
+  return {
+    update(v, t) {
+      M.eye.emissiveIntensity = 1.2 + Math.sin(t * 3) * 0.5;
+      M.eye.userData.baseIntensity = M.eye.emissiveIntensity;
+    },
+  };
+}
+
+function lucario(model, colors) {
+  const M = {
+    blue: model.mat(0x3a6ac8, { r: 0.6 }),
+    black: model.mat(0x23232e, { r: 0.5 }),
+    cream: model.mat(0xeadc98),
+    steel: model.mat(0xd8dde6, { r: 0.3, m: 0.7 }),
+    white: model.mat(0xffffff, { r: 0.3 }),
+    red: model.mat(0xd8323a, { r: 0.4 }),
+    team: model.mat(colors.main, { r: 0.6 }),
+  };
+  const j = model.j;
+  const hips = group(0, 0.8, 0);
+  model.body.add(hips);
+  j.hips = hips;
+  for (const side of [-1, 1]) {
+    const leg = group(side * 0.13, 0, 0);
+    leg.add(at(cyl(0.1, 0.08, 0.42, M.black), 0, -0.2, 0));
+    leg.add(at(cyl(0.075, 0.06, 0.36, M.blue), 0, -0.56, 0));
+    leg.add(at(ball(0.08, M.black, 1, 0.6, 1.8), 0, -0.76, 0.06));
+    hips.add(leg);
+    j[side < 0 ? 'legR' : 'legL'] = leg;
+  }
+  const torso = group();
+  hips.add(torso);
+  j.torso = torso;
+  torso.add(at(cyl(0.16, 0.18, 0.3, M.black, 10), 0, 0.12, 0));
+  torso.add(at(ball(1, M.cream, 0.24, 0.26, 0.2, 10), 0, 0.42, 0.03));
+  torso.add(at(cone(0.05, 0.16, M.steel, 6), 0, 0.42, 0.26, Math.PI / 2));
+  bandana(torso, M, 0.62, 0.13, 0.02);
+  const head = group(0, 0.68, 0.04);
+  torso.add(head);
+  j.head = head;
+  head.add(at(ball(1, M.blue, 0.2, 0.2, 0.22, 10), 0, 0.12, 0));
+  head.add(at(ball(1, M.black, 0.11, 0.08, 0.14, 8), 0, 0.06, 0.16));
+  head.add(at(mesh(new THREE.BoxGeometry(0.36, 0.07, 0.2), M.black), 0, 0.15, 0.07));
+  eyes(head, M, 0.08, 0.15, 0.19, 0.035, M.red);
+  for (const side of [-1, 1]) {
+    const ear = group(side * 0.11, 0.28, -0.02);
+    ear.rotation.z = -side * 0.25;
+    ear.add(at(cone(0.06, 0.24, M.blue, 6), 0, 0.11, 0));
+    head.add(ear);
+    j[side < 0 ? 'earR' : 'earL'] = ear;
+  }
+  // Four aura-sensing appendages hanging from the back of the head.
+  const locks = [];
+  for (const [x, y] of [[-0.07, 0.08], [0.07, 0.08], [-0.06, 0.18], [0.06, 0.18]]) {
+    const l = group(x, y, -0.16);
+    l.rotation.x = 2.5;
+    l.add(at(cone(0.035, 0.32, M.black, 5), 0, 0.15, 0));
+    head.add(l);
+    locks.push(l);
+  }
+  for (const side of [-1, 1]) {
+    const arm = group(side * 0.26, 0.52, 0);
+    arm.add(at(ball(0.08, M.blue), 0, 0, 0));
+    arm.add(at(cyl(0.065, 0.055, 0.3, M.blue), 0, -0.15, 0));
+    arm.add(at(ball(0.075, M.white), 0, -0.33, 0));
+    arm.add(at(cone(0.03, 0.12, M.steel, 5), 0, -0.3, -0.09, -Math.PI / 2));
+    torso.add(arm);
+    j[side < 0 ? 'armR' : 'armL'] = arm;
+  }
+  const tail = group(0, 0.02, -0.14);
+  tail.rotation.x = -2.3;
+  tail.add(at(cone(0.08, 0.4, M.blue, 6), 0, 0.18, 0));
+  torso.add(tail);
+  j.tail = tail;
+  return {
+    update(v, t) {
+      locks.forEach((l, i) => { l.rotation.x = 2.5 + Math.sin(t * 3 + i) * 0.12 - Math.min(0.6, Math.abs(v.vx) * 0.05); });
+    },
+  };
+}
+
+export const BUILDERS = { pikachu, charizard, blastoise, venusaur, gengar, lucario };

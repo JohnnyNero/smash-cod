@@ -137,6 +137,12 @@ export class CpuBrain {
           this.projTimer = 2 + Math.random() * 3;
           if (!facingFoe) mx = Math.sign(dx);
           tap('special');
+        } else if (me.grounded && adx > 1.5 && adx < 5 && Math.abs(dy) < 1 && me.pp.side > 0 && Math.random() < 0.12 * c.aggression) {
+          mx = Math.sign(dx); // side special toward them
+          tap('special');
+        } else if (me.grounded && adx > 5 && me.pp.down > 0 && Math.random() < 0.08) {
+          my = -1; // down special: setup moves / Leech Seed / Destiny Bond from a safe distance
+          tap('special');
         } else {
           this.intent = adx > 1.4 ? Math.sign(dx) : Math.random() < 0.3 ? -Math.sign(dx) : 0;
           if (Math.random() < 0.08 * c.aggression && me.grounded) tap('jump');

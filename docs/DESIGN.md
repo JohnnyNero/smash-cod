@@ -14,7 +14,7 @@ This is the source of truth for decisions. Update it when a decision changes.
 |---|---|
 | Guns / soldiers | Removed. Replaced with a Smash moveset. |
 | Pokémon | Real Pokémon, real Showdown data (stats, types, moves, PP). |
-| Data source | `@pkmn/dex` (MIT-licensed Pokémon Showdown data) from phase 2. |
+| Data source | `@pkmn/dex` (MIT-licensed Pokémon Showdown data), extracted at build time by `npm run gen:dex` into `src/data/dex.js` (13 KB) so the 50 MB package never ships. |
 | 3D models | Built procedurally in code, low-poly, to match the existing look. No ripped assets. |
 | Mode (first version) | **Showdown mode**: fully evolved teams. Journey (evolve mid-fight) mode later. |
 | Team | Build a team of **3**. Each Pokémon is one stock. Lose all 3 = lose. |
@@ -60,8 +60,9 @@ This is the source of truth for decisions. Update it when a decision changes.
 | Speed | Run / air speed, dash |
 | Attack / Sp. Atk | Power of physical / special moves |
 | Defense / Sp. Def | Resistance to knockback from physical / special moves |
-| HP | Weight (launch resistance) |
-| Types | Damage + knockback multipliers, immunities pass through |
+| HP + body weight (kg) | Weight (launch resistance): `0.7 + HP/250 + sqrt(kg)/55` |
+| Types | Real Showdown type chart. 2× → 1.6×, ½× → 0.6×, 4× → 2.56×; immunities (0×) pass straight through |
+| Stat stages | Showdown stages (+1 = 1.5×) on Atk/Def/SpA/SpD; Spe stages scale movement by √ |
 | STAB | Bonus on same-type moves |
 | 4 moves | 4 specials: B + neutral / side / up / down |
 | PP | Uses per stock, visible to both |
@@ -78,6 +79,29 @@ This is the source of truth for decisions. Update it when a decision changes.
 - A special's zip direction is the stick at the zip frame, falling back to the stick held when the
   move started.
 - The CPU was tuned until hard-vs-hard matches produced no self-destructs.
+
+## Phase 2 notes
+
+- Movesets (all legal per Showdown learnsets, checked by the generator):
+
+  | Pokémon | B | Side B | Up B (recovery) | Down B |
+  |---|---|---|---|---|
+  | Pikachu | Thunderbolt | Volt Switch | Quick Attack | Iron Tail |
+  | Charizard | Flamethrower | Flare Blitz (recoil) | Fly | Dragon Claw |
+  | Blastoise | Hydro Pump (5 PP) | Ice Beam | Rapid Spin | Shell Smash |
+  | Venusaur | Sludge Bomb | Giga Drain (drain) | Sleep Powder | Leech Seed |
+  | Gengar | Shadow Ball | Hypnosis | Sludge Wave | Destiny Bond |
+  | Lucario | Aura Sphere | Close Combat | Extreme Speed (5 PP) | Swords Dance |
+
+  Changes from the original sketch: Charizard uses Fly (a real recovery) instead of Air Slash;
+  Blastoise's recovery is Rapid Spin; Gengar's Sludge Wave sits on up-B with the generic rise.
+- Showdown rules kept: Grass types are immune to powder moves and Leech Seed; Ghost is immune to
+  Normal and Fighting moves (those projectiles fly straight through Gengar); damage doesn't wake a
+  sleeper in Showdown, but here a hit does, so sleep is a setup, not a death sentence.
+- Destiny Bond: for 4 s after using it, whoever KOs Gengar is KO'd too (can end in a draw).
+- Lucario has Smash-style Aura: its damage grows with its own % (up to +50%).
+- Normals (jab/tilts/aerials/throws) are typeless, so only specials interact with the type chart.
+- CPU hard-vs-hard KOs land around 100–200% (heavies at the top end); blast zones tightened.
 
 ## Controls (all devices)
 
@@ -129,8 +153,10 @@ Exact bindings live in `src/input.js` and the README.
 
 1. **Moveset engine** ✅ done: normals, specials with PP, shield/dodge, grab/throws, ledges; one
    Pokémon (Pikachu) end to end, with CPU and touch controls. Guns and soldiers removed.
-2. **Showdown data + all 6 fighters**: `@pkmn/dex` stats, types, type chart, STAB, moves; 3D models
-   and animations for the roster; effectiveness callouts.
+2. **Showdown data + all 6 fighters** ✅ done: `@pkmn/dex` stats, types, type chart, STAB, moves,
+   learnset checks; 3D models and animations for the roster; effectiveness callouts. Pulled in early
+   because the roster's moves needed them: stat stages (Swords Dance, Shell Smash, Close Combat drops),
+   sleep (Sleep Powder, Hypnosis), Leech Seed, drain (Giga Drain), recoil (Flare Blitz), Destiny Bond.
 3. **Strategy layer**: team builder, team preview, switching, KO hidden picks, bench healing,
    HUD info (revealed moves, bench %, effectiveness hints).
 4. **Battle arena stage, CPU that switches sensibly, polish**.

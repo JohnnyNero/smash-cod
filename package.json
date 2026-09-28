@@ -6,12 +6,14 @@
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
-    "preview": "vite preview --host"
+    "preview": "vite preview --host",
+    "gen:dex": "node scripts/gen-dex.mjs"
   },
   "dependencies": {
     "three": "^0.186.1"
   },
   "devDependencies": {
+    "@pkmn/dex": "^0.10.11",
     "vite": "^8.3.1"
   }
 }

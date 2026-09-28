@@ -84,8 +84,8 @@ export class Game {
     this.enterTitle();
   }
 
-  newSlot() {
-    return { device: null, mon: 0, row: 0, ready: false };
+  newSlot(i) {
+    return { device: null, mon: i, row: 0, ready: false };
   }
 
   resize() {
@@ -571,26 +571,52 @@ export class Game {
         const hx = a.pos.x + hb.x * a.facing;
         const hy = a.pos.y + hb.y;
         for (const d of this.fighters) {
-          if (d === a || !d.active || d.onRevival || a.hitSet.has(d)) continue;
+          if (d === a || !d.active || d.onRevival || !a.canHit(d, hb)) continue;
           if (!circleBox(hx, hy, hb.r, d.pos.x - d.w / 2, d.pos.y, d.pos.x + d.w / 2, d.pos.y + d.h)) continue;
           if (hb.grab) {
             if (d.grounded && !d.intangible && d.state !== 'held' && d.state !== 'holding') {
-              a.hitSet.add(d);
+              a.markHit(d, hb);
               a.startHolding(d);
             }
             continue;
           }
           if (d.intangible) continue;
-          a.hitSet.add(d);
+          a.markHit(d, hb);
           const base = hb.dmg * (a.move.smash ? a.chargeMult : 1);
-          this.applyHit(a, d, hb, a.move, base, a.facing, hx, hy);
+          const dirSign = hb.radial ? Math.sign(d.pos.x - a.pos.x) || a.facing : a.facing;
+          this.applyHit(a, d, hb, a.move, base, dirSign, hx, hy);
+          if (!a.move) break; // the hit ended the attacker's move (e.g. recoil KO)
         }
       }
     }
   }
 
+  // Resolve one hit: type effectiveness (immunities pass through), status moves, damage and
+  // knockback, drain/recoil, and the Showdown-style callouts.
   applyHit(a, d, hb, move, base, dirSign, hx, hy) {
     const dmg = damageFor(a, d, base, move);
+    const grassImmune = d.sp.types.includes('Grass') && (move.powder || hb.effect === 'seed');
+    if (dmg.eff === 0 || grassImmune) {
+      if (!this.demo) this.effects.callout(hx, hy + 0.6, 'NO EFFECT', 0xb8c0d0);
+      this.audio.block(hx);
+      return { result: 'immune' };
+    }
+    if (hb.effect) {
+      if (d.state === 'shield') {
+        this.effects.sparks(hx, hy, -dirSign, 0.5, d.colors.accent, 6, 8);
+        this.audio.block(hx);
+        return { result: 'blocked' };
+      }
+      const ok = d.applyStatus(hb.effect, a);
+      if (ok) {
+        const text = hb.effect === 'sleep' ? 'FELL ASLEEP!' : 'SEEDED!';
+        this.effects.callout(d.pos.x, d.pos.y + d.h + 0.7, text, hb.effect === 'sleep' ? 0xc8b8ff : 0x8ee060);
+        this.audio.status(hx, hb.effect);
+        a.stats.hits++;
+      }
+      return { result: ok ? 'status' : 'miss' };
+    }
+
     const res = d.takeHit({
       damage: dmg.damage, kb: hb.kb, grow: hb.grow, ang: hb.ang, dirSign,
       attacker: a, source: move.name || move.id,
@@ -599,13 +625,34 @@ export class Game {
     if (res.result === 'hit') {
       a.stats.hits++;
       const heavy = res.launch > 10;
-      this.effects.sparks(hx, hy, dirSign, 0.5, color, heavy ? 16 : 7, heavy ? 14 : 9);
-      this.effects.ring(hx, hy, heavy ? color : 0xffffff, heavy ? 2.2 : 1.1, heavy ? 0.3 : 0.18);
-      this.hitstop = Math.max(this.hitstop, Math.min(COMBAT.hitstopMax, Math.round(COMBAT.hitstopBase + dmg.damage * COMBAT.hitstopPerDamage)));
-      this.shake(0.08 + res.launch * 0.018);
+      const superEff = dmg.eff > 1;
+      this.effects.sparks(hx, hy, dirSign, 0.5, color, heavy || superEff ? 16 : 7, heavy ? 14 : 9);
+      this.effects.ring(hx, hy, heavy || superEff ? color : 0xffffff, heavy ? 2.2 : 1.1, heavy ? 0.3 : 0.18);
+      let stop = Math.min(COMBAT.hitstopMax, Math.round(COMBAT.hitstopBase + dmg.damage * COMBAT.hitstopPerDamage));
+      if (superEff) stop = Math.min(COMBAT.hitstopMax + 6, stop + 6);
+      this.hitstop = Math.max(this.hitstop, stop);
+      this.shake(0.08 + res.launch * 0.018 + (superEff ? 0.25 : 0));
       this.audio.hit(hx, dmg.damage, move.type);
       if (heavy) this.audio.launch(hx, res.launch);
-      this.rumble(d, Math.min(1, 0.3 + dmg.damage / 20), 0.5, 60 + dmg.damage * 8);
+      if (!this.demo && move.type && dmg.eff !== 1 && dmg.damage >= 2.5) {
+        if (superEff) {
+          this.effects.callout(hx, hy + 0.8, dmg.eff >= 4 ? 'SUPER EFFECTIVE!!' : 'SUPER EFFECTIVE!', 0xffd23a);
+          this.audio.superEffective(hx);
+        } else {
+          this.effects.callout(hx, hy + 0.8, 'NOT VERY EFFECTIVE…', 0x9aa3b5);
+        }
+      }
+      if (move.drain) {
+        const heal = dmg.damage * move.drain;
+        a.percent = Math.max(0, a.percent - heal);
+        this.effects.drain(hx, hy, a.pos.x, a.pos.y + a.h * 0.5, 0x8ee060);
+        this.popup(a.slot, `-${Math.round(heal)}% DRAINED`, 'good');
+      }
+      if (move.recoilFrac) {
+        a.percent = Math.min(999, a.percent + dmg.damage * move.recoilFrac);
+        this.popup(a.slot, 'RECOIL', 'bad');
+      }
+      this.rumble(d, Math.min(1, 0.3 + dmg.damage / 20 + (superEff ? 0.3 : 0)), 0.5, 60 + dmg.damage * 8);
       this.rumble(a, 0.2, 0.2, 60);
     } else if (res.result === 'blocked') {
       this.effects.sparks(hx, hy, -dirSign, 0.5, d.colors.accent, 6, 8);
@@ -613,6 +660,40 @@ export class Game {
       this.hitstop = Math.max(this.hitstop, 3);
     }
     return res;
+  }
+
+  onBoost(f, text) {
+    this.popup(f.slot, text, 'good');
+    this.effects.ring(f.pos.x, f.pos.y + f.h * 0.5, 0xff6a4a, 2.4, 0.4);
+    this.effects.boost(f.pos.x, f.pos.y + f.h * 0.3, 0, 1, 0xff8a4a, true);
+    if (!this.demo) this.effects.callout(f.pos.x, f.pos.y + f.h + 0.7, text, 0xff9a5a);
+    this.audio.statUp(f.pos.x);
+  }
+
+  onSeedTick(victim, by) {
+    this.effects.drain(victim.pos.x, victim.pos.y + victim.h * 0.6, by.pos.x, by.pos.y + by.h * 0.5, 0x8ee060);
+  }
+
+  moveFx(f, fx) {
+    const x = f.pos.x;
+    const y = f.pos.y + f.h * 0.6;
+    if (fx === 'powder') {
+      for (let i = 0; i < 40; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const s = 1 + Math.random() * 2.5;
+        this.effects.add(0, x, y + 0.5, 0, Math.cos(a) * s, Math.sin(a) * s + 1, 0, 0.9, 0.07, i % 2 ? 0x9ae060 : 0xf0a0d0, { drag: 2 });
+      }
+      this.audio.status(x, 'powder');
+    } else if (fx === 'hypno') {
+      for (let i = 0; i < 3; i++) this.effects.ring(x + f.facing * (0.8 + i * 0.4), y, 0xb07aff, 0.8 + i * 0.3, 0.35 + i * 0.1);
+      this.audio.status(x, 'sleep');
+    } else if (fx === 'wave') {
+      this.effects.ring(x, f.pos.y + 0.5, 0xb04ad0, 3.4, 0.4);
+      for (let i = 0; i < 36; i++) {
+        const a = (i / 36) * Math.PI * 2;
+        this.effects.add(0, x, f.pos.y + 0.6, 0, Math.cos(a) * 9, Math.sin(a) * 6 + 2, 0, 0.4, 0.14, 0xc060e0, { drag: 4 });
+      }
+    }
   }
 
   pummel(a, v) {
@@ -650,16 +731,26 @@ export class Game {
     const a = ((p.ang || 0) * Math.PI) / 180;
     const dir = owner.facing;
     const x = owner.pos.x + dir * owner.w * 0.6;
-    const y = owner.pos.y + owner.h * 0.45;
+    const y = owner.pos.y + owner.h * (p.y ?? 0.45); // p.y: launch height as a fraction of body height
     const mesh = new THREE.Group();
-    const core = new THREE.Mesh(new THREE.OctahedronGeometry(p.r * 0.8, 0), glowMat(0xffffff, 1));
-    const shell = new THREE.Mesh(new THREE.IcosahedronGeometry(p.r * 1.5, 0), glowMat(p.color, 0.6));
+    let core;
+    if (p.visual === 'seed' || p.visual === 'sludge') {
+      core = new THREE.Mesh(new THREE.IcosahedronGeometry(p.r * 0.9, 0), new THREE.MeshStandardMaterial({ color: p.color, flatShading: true, roughness: 0.5 }));
+    } else if (p.visual === 'shadow') {
+      core = new THREE.Mesh(new THREE.IcosahedronGeometry(p.r * 0.9, 1), new THREE.MeshBasicMaterial({ color: 0x14081e }));
+    } else if (p.visual === 'beam') {
+      core = new THREE.Mesh(new THREE.BoxGeometry(1.4, p.r * 0.6, p.r * 0.6), glowMat(0xffffff, 1));
+    } else {
+      core = new THREE.Mesh(new THREE.OctahedronGeometry(p.r * 0.8, 0), glowMat(0xffffff, 1));
+    }
+    const shell = new THREE.Mesh(new THREE.IcosahedronGeometry(p.r * 1.5, 0), glowMat(p.color, p.visual === 'seed' ? 0.2 : 0.6));
+    if (p.visual === 'beam') shell.scale.set(2.2, 0.6, 0.6);
     mesh.add(core, shell);
     mesh.position.set(x, y, 0);
     this.scene.add(mesh);
     this.projectiles.push({
       owner, move, p, x, y, vx: Math.cos(a) * p.speed * dir, vy: Math.sin(a) * p.speed,
-      life: p.life, mesh, shell, dirSign: dir,
+      life: p.life, mesh, shell, core, dirSign: dir, passed: new Set(),
     });
   }
 
@@ -688,10 +779,14 @@ export class Game {
       }
       if (!dead) {
         for (const d of this.fighters) {
-          if (d === pr.owner || !d.active || d.onRevival || d.intangible) continue;
+          if (d === pr.owner || !d.active || d.onRevival || d.intangible || pr.passed.has(d)) continue;
           if (!circleBox(pr.x, pr.y, p.r, d.pos.x - d.w / 2, d.pos.y, d.pos.x + d.w / 2, d.pos.y + d.h)) continue;
-          const hb = { kb: p.kb, grow: p.grow, ang: p.kbAng ?? 40 };
-          this.applyHit(pr.owner, d, hb, pr.move, p.dmg, Math.sign(pr.vx) || pr.dirSign, pr.x, pr.y);
+          const hb = { kb: p.kb, grow: p.grow, ang: p.kbAng ?? 40, effect: p.effect };
+          const res = this.applyHit(pr.owner, d, hb, pr.move, p.dmg, Math.sign(pr.vx) || pr.dirSign, pr.x, pr.y);
+          if (res.result === 'immune' || res.result === 'miss') {
+            pr.passed.add(d); // immune targets let it fly straight through
+            continue;
+          }
           dead = true;
           break;
         }
@@ -707,7 +802,8 @@ export class Game {
 
   // ------------------------------------------------------------ KOs & match end
 
-  onKO(f) {
+  // forced: a Destiny Bond KO, which still counts even if the match just ended.
+  onKO(f, forced = false) {
     if (f.dead) return;
     const killer = f.lastHitBy && this.time - f.lastHitTime < 8 ? f.lastHitBy : null;
     f.dead = true;
@@ -722,7 +818,8 @@ export class Game {
     this.shake(1.2);
     this.audio.ko(cx);
     for (const x of this.fighters) this.rumble(x, 1, 1, x === f ? 500 : 250);
-    if (this.demo || (this.state !== 'playing' && this.state !== 'countdown')) return;
+    const live = this.state === 'playing' || this.state === 'countdown';
+    if (this.demo || (!live && !forced)) return;
 
     f.stats.falls++;
     f.streak = 0;
@@ -751,6 +848,16 @@ export class Game {
         const alive = this.fighters.filter((x) => !x.eliminated);
         if (alive.length <= 1) this.endMatch(alive[0] || null);
       }
+    }
+
+    // Destiny Bond: whoever KOs the bonded Pokémon goes down with it.
+    if (f.destinyBond > 0 && killer && killer.active) {
+      f.destinyBond = 0;
+      killer.lastHitBy = f;
+      killer.lastHitTime = this.time;
+      killer.lastHitMove = 'Destiny Bond';
+      this.ui.announce('DESTINY BOND!', 'streak', 1600);
+      this.onKO(killer, true);
     }
   }
 
@@ -794,6 +901,7 @@ export class Game {
       charging: f.charging, tumble: f.tumble, dodge: f.dodge && f.dodge.kind, intangible: f.intangible,
       shieldFrac: Math.max(0, f.shieldHP / SHIELD.hp), flash: f.flash, invuln: f.invuln > 0 || f.onRevival,
       landSquash: f.landSquash, zipDir: f.zip ? { x: f.zip.vx, y: f.zip.vy } : null,
+      boosted: Object.values(f.boosts).some((v) => v > 0), seeded: !!f.seed, bond: f.destinyBond > 0,
       showTag: !this.demo,
     };
   }
@@ -805,6 +913,9 @@ export class Game {
       if (f.active) {
         m.root.position.set(f.pos.x, f.pos.y, 0);
         m.update(this.fighterView(f), dt);
+        if (f.state === 'sleep' && dt > 0 && Math.random() < 0.06) {
+          this.effects.add(0, f.pos.x + f.facing * 0.3, f.pos.y + f.h * 0.5, 0, 0.4, 1.2, 0, 1.2, 0.12, 0xd8d0ff, { drag: 0.5 });
+        }
       }
       const drone = this.stage.drones[i];
       drone.visible = f.active && f.onRevival;
@@ -815,8 +926,14 @@ export class Game {
     });
     for (const pr of this.projectiles) {
       pr.mesh.position.set(pr.x, pr.y, 0);
-      pr.mesh.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
-      pr.shell.scale.setScalar(0.8 + Math.random() * 0.5);
+      if (pr.p.visual === 'beam') {
+        pr.mesh.rotation.set(0, 0, Math.atan2(pr.vy, pr.vx));
+      } else {
+        pr.shell.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+        pr.core.rotation.x += dt * 8;
+        pr.shell.scale.setScalar(0.8 + Math.random() * 0.5);
+      }
+      if (pr.p.visual === 'flame') pr.mesh.scale.setScalar(0.7 + (1 - pr.life / pr.p.life) * 1.2);
     }
     this.effects.update(dt);
     if (!this.demo && this.fighters.length) this.ui.updateHUD(this.fighters, this.settings, this.timeLeft);

@@ -2,7 +2,7 @@
 // Every menu element is also clickable/tappable and reports through `onAction`.
 
 import { TYPE_COLORS } from './config.js';
-import { SPECIALS } from './data/moves.js';
+import { moveInfo } from './data/moveset.js';
 import { SPECIES_LIST } from './data/pokemon.js';
 
 const el = (tag, cls, html = '') => {
@@ -113,8 +113,8 @@ export class UI {
         </div>`).join('');
       const b = sp.baseStats;
       const moves = Object.entries(sp.moves).map(([slot, id]) => {
-        const mv = SPECIALS[id];
-        return `<div class="mv" style="--tc:${TYPE_COLORS[mv.type]}"><i>${SLOT_LABEL[slot]}</i>${mv.name}<small>${mv.pp} PP</small></div>`;
+        const mv = moveInfo(id);
+        return `<div class="mv" style="--tc:${TYPE_COLORS[mv.type]}" title="${mv.desc}"><i>${SLOT_LABEL[slot]}</i>${mv.name}<small>${mv.pp} PP</small></div>`;
       }).join('');
       return `<div class="card ${s.ready ? 'is-ready' : ''}" style="--pc:${color}">
         <div class="card-head"><span class="pn">P${i + 1}</span><span class="dev">${s.deviceLabel}</span>
@@ -159,6 +159,7 @@ export class UI {
           <div class="types">${f.sp.types.map(typeChip).join('')}</div>
           <div class="pct"><span class="num">0</span><span class="sign">%</span></div>
           <div class="stocks"></div>
+          <div class="status"></div>
         </div>
         <div class="loadout">${moves}</div>
         <div class="popups"></div>`);
@@ -169,6 +170,7 @@ export class UI {
         num: c.querySelector('.num'),
         pct: c.querySelector('.pct'),
         stocks: c.querySelector('.stocks'),
+        status: c.querySelector('.status'),
         pp: Object.fromEntries([...c.querySelectorAll('.pp')].map((e) => [e.dataset.slot, e])),
         popups: c.querySelector('.popups'),
         last: {},
@@ -198,6 +200,14 @@ export class UI {
           ? Array.from({ length: Math.max(0, f.stocks) }, () => '<i></i>').join('')
           : `<span class="score">SCORE ${f.stats.kos - f.stats.falls >= 0 ? '+' : ''}${f.stats.kos - f.stats.falls}</span>`;
       });
+      // Stat stages and status, like Showdown's HUD.
+      const tags = Object.entries(f.boosts).filter(([, v]) => v)
+        .map(([k, v]) => `<span class="${v > 0 ? 'up' : 'down'}">${v > 0 ? '+' : ''}${v} ${k.toUpperCase()}</span>`);
+      if (f.state === 'sleep') tags.push('<span class="slp">SLP</span>');
+      if (f.seed) tags.push('<span class="seed">SEEDED</span>');
+      if (f.destinyBond > 0) tags.push('<span class="bond">BOND</span>');
+      const tagHtml = tags.join('');
+      set('status', tagHtml, (v) => { c.status.innerHTML = v; });
       for (const [slot, e] of Object.entries(c.pp)) {
         const pp = f.pp[slot];
         const max = f.moveset.specials[slot].pp;

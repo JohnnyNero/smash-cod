@@ -59,6 +59,8 @@ export class Effects {
     this.beamGeo.translate(0, 0.5, 0);
     this.markers = [];
     this.markerTex = hitmarkerTexture();
+    this.callouts = [];
+    this.calloutTex = new Map();
 
     this.lights = [];
     for (let i = 0; i < 4; i++) {
@@ -189,6 +191,42 @@ export class Effects {
     this.markers.push(s);
   }
 
+  // Floating Showdown-style text ("SUPER EFFECTIVE!", "FELL ASLEEP!") that rises and fades.
+  callout(x, y, text, color = 0xffffff) {
+    const key = text + color;
+    let tex = this.calloutTex.get(key);
+    if (!tex) {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 96;
+      const g = c.getContext('2d');
+      g.font = 'bold 54px "Black Ops One", Impact, sans-serif';
+      g.textAlign = 'center';
+      g.lineWidth = 10;
+      g.strokeStyle = '#000';
+      g.strokeText(text, 256, 66);
+      g.fillStyle = '#' + color.toString(16).padStart(6, '0');
+      g.fillText(text, 256, 66);
+      tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      this.calloutTex.set(key, tex);
+    }
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, toneMapped: false }));
+    s.position.set(x, y, 1);
+    s.renderOrder = 30;
+    s.userData = { life: 1.0, max: 1.0, y };
+    this.scene.add(s);
+    this.callouts.push(s);
+  }
+
+  // Particles streaming from one point to another (Giga Drain, Leech Seed).
+  drain(x0, y0, x1, y1, color) {
+    for (let i = 0; i < 10; i++) {
+      const t = 0.35 + Math.random() * 0.2;
+      this.add(0, x0 + (Math.random() - 0.5) * 0.4, y0 + (Math.random() - 0.5) * 0.4, 0, (x1 - x0) / t, (y1 - y0) / t + 1, 0, t, 0.08, color, { grav: 2 });
+    }
+  }
+
   light(x, y, color, intensity, life) {
     const l = this.lights.reduce((a, b) => (a.userData.life < b.userData.life ? a : b));
     l.position.set(x, y, 1.5);
@@ -265,6 +303,12 @@ export class Effects {
       o.scale.set(r, 26, r);
       o.material.opacity = 1 - k;
     });
+    fade(this.callouts, (o, k) => {
+      const pop = Math.min(1, k * 8);
+      o.scale.set(3.2 * (0.6 + 0.4 * pop), 0.6 * (0.6 + 0.4 * pop), 1);
+      o.position.y = o.userData.y + k * 0.8;
+      o.material.opacity = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1;
+    });
     fade(this.markers, (o, k) => {
       o.scale.setScalar(o.userData.size * (1.3 - k * 0.5));
       o.material.opacity = 1 - k * k;
@@ -285,7 +329,7 @@ export class Effects {
     this.glow.count = 0;
     this.smoke.count = 0;
     for (const l of this.lights) { l.userData.life = 0; l.intensity = 0; }
-    for (const arr of [this.rings, this.beams, this.markers]) {
+    for (const arr of [this.rings, this.beams, this.markers, this.callouts]) {
       for (const o of arr) {
         this.scene.remove(o);
         o.material.dispose();

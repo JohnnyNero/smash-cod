@@ -92,6 +92,9 @@ export class Audio {
     this.tone(160 - Math.min(100, dmg * 5), 0.12 + dmg * 0.01, { type: 'square', freqEnd: 50, gain: g * 0.4, x });
     if (type === 'Electric') this.tone(1200, 0.12, { type: 'sawtooth', freqEnd: 300, gain: 0.12, x });
     if (type === 'Steel') this.tone(1800, 0.25, { type: 'triangle', freqEnd: 1600, gain: 0.12, x });
+    if (type === 'Fire') this.noise(0.25, { type: 'bandpass', freq: 800, freqEnd: 300, gain: 0.2, x });
+    if (type === 'Water') this.noise(0.2, { type: 'lowpass', freq: 1500, freqEnd: 400, gain: 0.25, x });
+    if (type === 'Ghost' || type === 'Poison') this.tone(200, 0.2, { type: 'sine', freqEnd: 90, gain: 0.15, x });
   }
 
   special(x, type) {
@@ -100,9 +103,30 @@ export class Audio {
       this.tone(220, 0.3, { type: 'sawtooth', freqEnd: 900, gain: 0.1, x });
     } else if (type === 'Steel') {
       this.tone(1400, 0.3, { type: 'triangle', freqEnd: 1300, gain: 0.12, x });
+    } else if (type === 'Fire') {
+      this.noise(0.6, { type: 'bandpass', freq: 600, freqEnd: 1400, q: 0.7, gain: 0.3, x });
+    } else if (type === 'Water' || type === 'Ice') {
+      this.noise(0.5, { type: 'lowpass', freq: 2500, freqEnd: 700, gain: 0.3, x });
+    } else if (type === 'Ghost' || type === 'Poison' || type === 'Fighting') {
+      this.tone(160, 0.4, { type: 'sawtooth', freqEnd: 420, gain: 0.08, x });
     } else {
       this.noise(0.15, { type: 'bandpass', freq: 1200, freqEnd: 3000, q: 1.5, gain: 0.2, x });
     }
+  }
+
+  superEffective(x) {
+    this.tone(660, 0.12, { type: 'square', gain: 0.12, x });
+    this.tone(990, 0.2, { type: 'square', gain: 0.12, delay: 0.08, x });
+  }
+
+  statUp(x) {
+    for (let i = 0; i < 3; i++) this.tone(500 + i * 200, 0.12, { type: 'triangle', freqEnd: 700 + i * 200, gain: 0.1, delay: i * 0.07, x });
+  }
+
+  status(x, kind) {
+    if (kind === 'sleep') this.tone(700, 0.6, { type: 'sine', freqEnd: 300, gain: 0.15, x });
+    else if (kind === 'seed') this.tone(300, 0.2, { type: 'triangle', freqEnd: 600, gain: 0.12, x });
+    else this.noise(0.5, { type: 'highpass', freq: 3000, gain: 0.12, x });
   }
 
   grab(x) { this.noise(0.08, { type: 'bandpass', freq: 700, q: 1, gain: 0.3, x }); }

@@ -185,6 +185,13 @@ b { color: var(--gold); }
 .pp.low b { color: #ffb84a; }
 .pp.out { opacity: 0.6; }
 .pp.out b { color: #ff5a4a; }
+.status { display: flex; flex-wrap: wrap; gap: 3px; min-height: 0; max-width: 150px; }
+.status span { font-size: 9px; font-weight: 700; padding: 0 4px; border-radius: 3px; letter-spacing: 0.05em; }
+.status .up { background: #d8503a; }
+.status .down { background: #3a6ad8; }
+.status .slp { background: #8a7ad0; }
+.status .seed { background: #5a9a3a; }
+.status .bond { background: #6a3aa0; }
 .types { display: flex; gap: 3px; margin: 2px 0; }
 .type {
   display: inline-block; padding: 1px 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.08em;

@@ -5,9 +5,10 @@ execution decides who wins.** It's 3D and runs in the browser, with gamepads, ke
 
 The full design and roadmap live in [`docs/DESIGN.md`](docs/DESIGN.md).
 
-**Status: phase 1 of 4 (moveset engine).** Pikachu is playable end to end: Smash normals, 4 specials
-with real Showdown PP, shield, dodges, grabs and throws, ledges, a CPU and touch controls.
-All 6 Pokémon, the type chart, the team builder, switching and the KO picks come in the next phases.
+**Status: phase 2 of 4.** All 6 Pokémon are playable (Pikachu, Charizard, Blastoise, Venusaur,
+Gengar, Lucario) with real Showdown stats, types, the full type chart ("SUPER EFFECTIVE!"), 4 specials
+each with real PP, stat boosts, sleep, Leech Seed and Destiny Bond. The team builder, team of 3,
+switching and hidden KO picks come in phase 3.
 
 ## Play
 
@@ -51,13 +52,17 @@ Add `?quality=low` to the URL on a slow machine. Phones use it automatically.
 |---|---|
 | `docs/DESIGN.md` | Design doc: decisions, pillars, roadmap |
 | `src/config.js` | Engine tunables: physics, combat, shield, dodges, ledges, stage |
-| `src/data/pokemon.js` | Species: Showdown base stats and types, and how they map to fighter stats |
-| `src/data/moves.js` | Normals, specials (type/power/PP), throws; frame data and hitboxes |
-| `src/damage.js` | Showdown-style damage: Atk/SpA vs Def/SpD, STAB (type chart in phase 2) |
+| `src/data/roster.js` | Playable Pokémon: size, jumps, default moves, model |
+| `src/data/dex.js` | Generated Showdown data (run `npm run gen:dex` after changing the roster or moves) |
+| `scripts/gen-dex.mjs` | Extracts stats, types, moves, type chart and learnsets from `@pkmn/dex` |
+| `src/data/pokemon.js` | Merges roster + Showdown data; maps stats to fighter stats |
+| `src/data/moves.js` | Move behaviour: frame data, hitboxes, projectiles, effects |
+| `src/data/moveset.js` | Builds a fighter's moves (behaviour + Showdown type/power/PP) |
+| `src/damage.js` | Showdown-style damage: Atk/SpA vs Def/SpD, stat stages, STAB, type chart |
 | `src/fighter.js` | Fighter state machine (no rendering) |
 | `src/game.js` | Match flow, hit resolution, projectiles, grabs, KOs, camera, menus |
 | `src/models/creature.js` | Creature rig and code-driven animation |
-| `src/models/species.js` | Per-species low-poly model builders (Pikachu so far) |
+| `src/models/species.js` | Per-species low-poly model builders |
 | `src/ai.js` | CPU opponent |
 | `src/input.js`, `src/touch.js` | Gamepads, keyboard, touch |
 | `src/audio.js` | Synthesized sounds |
