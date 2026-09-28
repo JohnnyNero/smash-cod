@@ -45,7 +45,9 @@ const stripName = (n) => n.replace(/_\d+$/, '');
 const CHAINS = {
   torso: [[['Spine1', 'Spine'], 0.6], [['Spine2'], 0.4]],
   head: [[['Neck1', 'Neck'], 0.25], [['Neck2'], 0.2], [['Neck3'], 0.15], [['Head'], 0.6]],
-  armL: [[['LArm'], 1]], armR: [[['RArm'], 1]],
+  // Shoulders take a share of arm swings so the whole arm moves, not just from the socket.
+  armL: [[['LShoulder'], 0.25], [['LArm'], 0.75]], armR: [[['RShoulder'], 0.25], [['RArm'], 0.75]],
+  jaw: [[['Jaw'], 1]],
   elbowL: [[['LForeArm'], 1]], elbowR: [[['RForeArm'], 1]],
   legL: [[['LThigh'], 1]], legR: [[['RThigh'], 1]],
   kneeL: [[['LLeg'], 1]], kneeR: [[['RLeg'], 1]],
@@ -60,11 +62,15 @@ const CHAINS = {
   lockL: [[['LFeelerB1'], 0.4], [['LFeelerB2'], 0.3], [['LFeelerB3'], 0.2], [['LFeelerB4'], 0.1]],
   lockR: [[['RFeelerB1'], 0.4], [['RFeelerB2'], 0.3], [['RFeelerB3'], 0.2], [['RFeelerB4'], 0.1]],
 };
+// Seconds of lag per bone along floppy chains (a wave travels down tails, ears, locks, wings).
+const LAG = { tail: 0.045, earL: 0.04, earR: 0.04, lockL: 0.05, lockR: 0.05, wingL: 0.035, wingR: 0.035 };
+
 // Gengar has no spine: its whole body leans from the hips.
 const TORSO_FALLBACK = [[['Hips', 'Waist'], 0.5]];
 
 const tq = new THREE.Quaternion();
 const tq2 = new THREE.Quaternion();
+const tq3 = new THREE.Quaternion();
 const te = new THREE.Euler();
 const ID = new THREE.Quaternion();
 
@@ -152,11 +158,14 @@ export function buildRig(model, id, colors, makeMat) {
   const dummies = {};
   const addChain = (joint, chain) => {
     const dummy = dummies[joint] || (dummies[joint] = new THREE.Object3D());
+    let k = 0;
     for (const [names, weight] of chain) {
       const bone = names.map((n) => bones[side(n)]).find(Boolean);
       if (!bone || drivers.some((d) => d.bone === bone)) continue;
       const P = bone.parent ? restWorld(bone.parent) : new THREE.Quaternion();
-      drivers.push({ bone, dummy, weight, P, Pinv: P.clone().invert(), qRest: bone.quaternion.clone(), C: new THREE.Quaternion() });
+      // Follow-through: each further bone of a floppy chain lags a little behind the last.
+      const lag = (LAG[joint] || 0) * k++;
+      drivers.push({ bone, dummy, weight, lag, P, Pinv: P.clone().invert(), qRest: bone.quaternion.clone(), C: new THREE.Quaternion() });
     }
   };
   for (const [joint, chain] of Object.entries(CHAINS)) addChain(joint, chain);
@@ -199,7 +208,7 @@ export function buildRig(model, id, colors, makeMat) {
   // Rest corrections: arms hang down (and a little out) instead of a T/A pose.
   const quad = id === 'venusaur';
   for (const [arm, fore] of [['armL', 'LForeArm'], ['armR', 'RForeArm']]) {
-    const d = drivers.find((x) => x.dummy === dummies[arm]);
+    const d = drivers.find((x) => x.dummy === dummies[arm] && stripName(x.bone.name) === side(arm === 'armL' ? 'LArm' : 'RArm'));
     const f = bones[side(fore)];
     if (!d || !f) continue;
     const dir = posOf(f).sub(posOf(d.bone)).normalize();
@@ -208,7 +217,7 @@ export function buildRig(model, id, colors, makeMat) {
   }
 
   // Joints creature.js animates.
-  for (const name of ['hips', 'torso', 'head', 'armL', 'armR', 'elbowL', 'elbowR', 'legL', 'legR', 'kneeL', 'kneeR', 'tail', 'earL', 'earR']) {
+  for (const name of ['hips', 'torso', 'head', 'armL', 'armR', 'elbowL', 'elbowR', 'legL', 'legR', 'kneeL', 'kneeR', 'tail', 'earL', 'earR', 'jaw']) {
     model.j[name] = dummies[name] || (dummies[name] = new THREE.Object3D());
   }
 
@@ -227,18 +236,37 @@ export function buildRig(model, id, colors, makeMat) {
   return {
     rig: true,
     feet,
-    allFours: false, // Pikachu's rig is weighted to the hips; the all-fours run needs its own pass
+    allFours: id === 'pikachu',
     extra,
     update(v, t, dt, springs) { if (extra) extra.update(v, t, dt, springs); },
     quadruped: quad,
     bones,
     drivers,
     // After creature.js has posed the joints: write them onto the bones.
-    retarget() {
+    retarget(dt = 1 / 60) {
+      // Keep a short history of each joint's rotation for the lagging chain bones.
+      for (const dm of Object.values(dummies)) {
+        const h = dm.userData.hist || (dm.userData.hist = []);
+        for (const e of h) e.age += dt;
+        const e = h.length > 24 ? h.pop() : { q: new THREE.Quaternion(), age: 0 };
+        e.q.setFromEuler(dm.rotation);
+        e.age = 0;
+        h.unshift(e);
+      }
       for (const d of drivers) {
-        te.copy(d.dummy.rotation);
-        tq.setFromEuler(te);
-        if (d.weight !== 1) tq.slerpQuaternions(ID, tq, d.weight);
+        if (d.lag > 0) {
+          const h = d.dummy.userData.hist;
+          let e = h[h.length - 1];
+          for (const x of h) if (x.age >= d.lag) { e = x; break; }
+          tq3.copy(e.q);
+        } else {
+          te.copy(d.dummy.rotation);
+          tq3.setFromEuler(te);
+        }
+        // (slerpQuaternions copies its first argument into the target before reading the
+        // second, so the target must not also be an input.)
+        if (d.weight !== 1) tq.slerpQuaternions(ID, tq3, d.weight);
+        else tq.copy(tq3);
         // bone = P⁻¹ · R · C · P · qRest
         tq2.copy(d.Pinv).multiply(tq).multiply(d.C).multiply(d.P).multiply(d.qRest);
         d.bone.quaternion.copy(tq2);

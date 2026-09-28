@@ -40,7 +40,7 @@ function strikeCurve(p, A, B) {
   return { a, s, f, s0 };
 }
 
-const JOINTS = ['hips', 'torso', 'head', 'armL', 'armR', 'legL', 'legR', 'tail', 'earL', 'earR', 'kneeL', 'kneeR', 'elbowL', 'elbowR'];
+const JOINTS = ['hips', 'torso', 'head', 'armL', 'armR', 'legL', 'legR', 'tail', 'earL', 'earR', 'kneeL', 'kneeR', 'elbowL', 'elbowR', 'jaw'];
 
 // Character look: 'toon' = cel-shaded with ink outlines (default), 'lowpoly' = faceted.
 // Character look: 'standard' (default: the models' own materials, smooth lit), 'toon' (cel
@@ -895,6 +895,15 @@ export class CreatureModel {
       }
     }
 
+    // ---- jaw (rigged models): open on strikes, roars, hits and cheers
+    if (v.state === 'attack' && v.anim) {
+      const hits = v.hits || [[0.3, 0.5]];
+      const k = strikeCurve(p, hits[0][0], hits[0][1]);
+      o.jaw.x = v.anim === 'breath' ? 0.55 * Math.max(k.s, 0.3 * k.a) : 0.3 * k.s + 0.1 * k.a;
+    } else if (v.state === 'hitstun' || v.state === 'held') o.jaw.x = 0.4;
+    else if (v.state === 'shieldbreak' || v.state === 'sleep') o.jaw.x = 0.15;
+    if (v.victory) o.jaw.x = 0.35 * Math.abs(Math.sin(t * 5));
+
     // ---- secondary motion: tails, ears and wings lag behind the body's acceleration
     const bob = bodyY;
     const bobAcc = sd > 0 ? ((bob - pv.bodyY) / sd - pv.bobV) / sd : 0;
@@ -1002,7 +1011,7 @@ export class CreatureModel {
     }
 
     if (this.parts.update) this.parts.update(v, t, dt, this.springs);
-    if (this.parts.retarget) this.parts.retarget(); // rigged model: joints -> bones
+    if (this.parts.retarget) this.parts.retarget(dt); // rigged model: joints -> bones
 
     // Blink every few seconds.
     this.blinkT -= dt;

@@ -201,8 +201,11 @@ target) now always runs: RenderPass -> bloom (high quality only) -> ink -> Outpu
 - Extras: Charizard's wings flap on their bone chains and its tail flame (meshes skinned to TailA*)
   is an additive glow that flickers; Lucario's aura dreadlocks swing. The ink mask shader supports
   skinning.
-- Known gaps: rigged Pikachu runs upright (its mesh is weighted to the hips, so the all-fours run
-  needs its own pass); no blinking; Charizard's long tail is purely visual.
+- Floppy chains (tails, ears, Lucario's locks, Charizard's wing feelers) replay the joint's rotation
+  with a per-bone lag (`LAG` in rig.js) so motion travels down them as a wave; shoulders share arm
+  swings; the jaw opens on strikes, hits, Flamethrower and the victory cheer.
+- Default look is the models' own materials (no cel shading); `?style=toon` restores toon + ink.
+- Known gaps: no blinking; Charizard's long tail is purely visual.
 
 ## Polish pass 2: movement & models
 
