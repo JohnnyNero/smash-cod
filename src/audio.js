@@ -260,6 +260,20 @@ export class Audio {
     }
   }
 
+  // Electric hit freeze: a crackling buzz for as long as the freeze lasts.
+  buzz(x, dur) {
+    const d = Math.max(0.12, dur);
+    this.tone(95, d, { type: 'sawtooth', gain: 0.1, x });
+    this.tone(143, d, { type: 'square', gain: 0.04, x });
+    this.noise(d, { type: 'bandpass', freq: 3200, q: 3, gain: 0.18, x });
+  }
+
+  // Ice hit: a glassy crack.
+  freeze(x) {
+    this.tone(3100, 0.18, { type: 'triangle', freqEnd: 2500, gain: 0.08, x });
+    this.noise(0.1, { type: 'highpass', freq: 5000, gain: 0.22, x });
+  }
+
   // Smash charge: a short rising blip, higher the longer it's held.
   charge(x, k) {
     this.tone(260 + 520 * k, 0.07, { type: 'triangle', freqEnd: 300 + 620 * k, gain: 0.05 + 0.04 * k, x });

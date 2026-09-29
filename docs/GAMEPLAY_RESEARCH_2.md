@@ -9,9 +9,9 @@ noted; sources at the bottom.
 | 1 | Parry (release shield at the right moment) | Core feel + depth | missing | S |
 | 2 | Jab combos + rapid-jab finisher | Core feel | jab only repeats | S–M |
 | 3 | Rage (attacker's % boosts knockback) | Comeback | missing | XS |
-| 4 | Electric (and other type) hitlag flavours | Spectacle | missing | XS |
+| 4 | Electric (and other type) hitlag flavours | Spectacle | **done** | XS |
 | 5 | SDI: wiggle out of long hitlag | Depth | ASDI only | S |
-| 6 | Hitstun cancelling on big launches | Depth / feel | missing | S |
+| 6 | Hitstun cancelling on big launches | Depth / feel | **done** | S |
 | 7 | Sakurai angle + autolink multi-hits | Depth | missing | M |
 | 8 | Crouch + crouch cancel | Depth | missing | S |
 | 9 | Mega Evolution meter (Pokémon "Final Smash") | Comeback + spectacle | missing | L |

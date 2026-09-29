@@ -1180,6 +1180,14 @@ export class CreatureModel {
     let flashColor = null;
     // Frozen in hitlag: flicker white-hot, like Smash's hit flash.
     if (v.shake) flash = Math.max(flash * 0.6, Math.floor(t * 30) % 2 ? 0.7 : 0.3);
+    let typeColor = null;
+    if (v.hitType === 'Electric') {
+      // Skeleton flash: strobing bright yellow and near-black.
+      const on = Math.floor(t * 24) % 2;
+      flash = on ? 0.7 : 0.12;
+      typeColor = 0xffe840;
+    } else if (v.hitType === 'Ice') { flash = 0.55; typeColor = 0xbfeeff; }
+    else if (v.hitType === 'Fire') { flash = Math.floor(t * 30) % 2 ? 0.7 : 0.4; typeColor = 0xff7a20; }
     if (v.state === 'dodge' && v.intangible) { flash = 0.45; flashColor = 0x9fd8ff; }
     else if (v.invuln) flash = Math.max(flash, 0.25 + 0.2 * Math.sin(t * 25));
     else if (v.state === 'helpless') { flash = 0.25; flashColor = 0x000000; }
@@ -1187,6 +1195,10 @@ export class CreatureModel {
     else if (v.bond) { flash = 0.25 + 0.15 * Math.sin(t * 8); flashColor = 0x8a3aff; }
     else if (v.seeded && Math.sin(t * 6) > 0.3) { flash = 0.25; flashColor = 0x6adc3a; }
     else if (v.boosted) { flash = 0.12 + 0.08 * Math.sin(t * 5); flashColor = 0xff5a3a; }
+    if (typeColor !== null) {
+      flashColor = typeColor;
+      if (v.hitType === 'Electric') flash = Math.floor(t * 24) % 2 ? 0.7 : 0.12;
+    }
     if (this.appearT < 1) { flash = 1 - this.appearT; flashColor = null; }
     if (this.recallT < 1) { flash = 0.4 + this.recallT * 0.6; flashColor = 0xff3030; }
     else if (this.parts.rig && this.auraGlow > 0.05 && flash < 0.16 * this.auraGlow) {

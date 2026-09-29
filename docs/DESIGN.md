@@ -299,6 +299,20 @@ instead of running through, while rolls still cross through and aerial cross-ups
   flip. The extra clips live in `public/models/charizard_clips.json` (exported from the full
   clip set, loaded with the model).
 
+## Type hit freeze & hitstun cancel (research round 2, items 4 and 6)
+
+- **Type-flavoured hit freeze:** Electric hits freeze 1.5x longer (Ultimate's electric hitlag)
+  with a yellow strobe on the victim, crackle streaks, a buzz for the whole freeze and a soft
+  light. Ice freezes 1.25x longer with a pale-blue frozen tint, shards and a glassy crack.
+  Fire flickers orange with embers rising off the victim; Water splashes; Ghost/Poison puff
+  smoke. Capped at 30 frames of freeze.
+- **Hitstun cancel:** after a tumbling launch you can act before hitstun ends once you've
+  slowed down: air dodge after 25 frames below speed 11.5, jump / aerial / special after 28
+  frames below 9.2 (Ultimate's 40 f / 2.5 and 45 f / 2.0, converted to our shorter hitstun and
+  units). A small blue glint shows when the window opens. Just above the stage the air-dodge
+  cancel is off so shield presses there still tech. Only tumbling launches can cancel, so
+  combos off small hits still link. The CPU uses it to jump back when launched off stage.
+
 ## Sharpness & hold-to-smash
 
 - **Blur:** the EffectComposer copies the renderer's pixel ratio only when it's constructed

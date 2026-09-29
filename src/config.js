@@ -44,6 +44,8 @@ export const COMBAT = {
   hitstopBase: 3,
   hitstopPerDamage: 0.6,
   hitstopMax: 20,
+  // Type flavour on hit freeze (Ultimate: electric hitlag x1.5). Capped at hitstopMax + 10.
+  typeHitlag: { Electric: 1.5, Ice: 1.25 },
   smashChargeFrames: 60,
   smashChargeBonus: 0.4, // fully charged smash = 1.4x damage
   flickFrames: 5, // tap direction + attack within this many frames = smash attack
@@ -51,6 +53,12 @@ export const COMBAT = {
   techLockout: 30, // ...but a press within this many frames of the previous one doesn't count
   staleFactors: [0.08, 0.076, 0.068, 0.06, 0.053, 0.045, 0.038, 0.03, 0.022], // Ultimate's queue
   freshBonus: 1.05,
+  // Hitstun cancel (Ultimate: air dodge after 40 f below launch speed 2.5, aerial after 45 f
+  // below 2.0), converted to our shorter hitstun and speed units.
+  hsCancelDodgeF: 25,
+  hsCancelDodgeSpeed: 11.5,
+  hsCancelActF: 28,
+  hsCancelActSpeed: 9.2,
   clankRange: 9, // grounded attacks whose hitboxes meet clank if their damage is within this (Smash: 9%)
 };
 

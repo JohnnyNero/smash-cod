@@ -862,6 +862,32 @@ export class Fighter {
         this.pos.y += (this.sy / mag) * COMBAT.asdi * mag * (this.grounded ? 0 : 1);
       }
     }
+    // Hitstun cancel (Ultimate-style): once a big launch has slowed down you can act early:
+    // air dodge after a while, jump or attack a little later. Combos still hold (only long
+    // launches reach the windows) but big hits stop feeling like cutscenes.
+    if (!this.grounded && this.hitstun > DT && this.game.canAct && this.launchedHard) {
+      const speed = Math.hypot(this.vel.x, this.vel.y);
+      const inp = this.inp;
+      const nearGround = this.vel.y < 0 && this.pos.y > STAGE.main.top - 0.5 && this.pos.y < STAGE.main.top + 1.6
+        && Math.abs(this.pos.x) < STAGE.main.right + 0.5; // leave presses there for teching
+      const canDodge = this.sf >= COMBAT.hsCancelDodgeF && speed < COMBAT.hsCancelDodgeSpeed;
+      const canAct = this.sf >= COMBAT.hsCancelActF && speed < COMBAT.hsCancelActSpeed;
+      if (canDodge && !this.hsCancelShown) {
+        this.hsCancelShown = true;
+        this.game.effects.glint(this.pos.x, this.pos.y + this.h * 0.6, 0xbfe8ff); // "you can act"
+      }
+      if (canDodge && !nearGround && inp.pressed.shield && this.airDodgeReady) {
+        this.tumble = false;
+        this.startDodge('air');
+        return;
+      }
+      if (canAct && (inp.pressed.jump || inp.pressed.attack || inp.pressed.special || inp.pressed.smash)) {
+        this.tumble = false;
+        this.setState('air');
+        this.airControl();
+        return;
+      }
+    }
     this.hitstun -= DT;
     if (this.hitstun <= 0) this.toNeutral();
   }
@@ -1368,6 +1394,8 @@ export class Fighter {
     this.vel.y = dy * launch;
     this.hitstun = launch * COMBAT.hitstunPerLaunch + 0.05;
     this.tumble = launch > COMBAT.tumbleAt;
+    this.launchedHard = this.tumble;
+    this.hsCancelShown = false;
     this.flash = 1;
     this.fastFall = false;
     this.setState('hitstun');

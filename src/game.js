@@ -1206,7 +1206,11 @@ export class Game {
       // Smash attacks freeze longer the more they were charged; super-effective hits longer still.
       if (smash) stop = Math.min(COMBAT.hitstopMax + 4, stop + 3 + Math.round(((a.chargeMult || 1) - 1) * 10));
       if (superEff) stop = Math.min(COMBAT.hitstopMax + 6, stop + 6);
+      const tl = COMBAT.typeHitlag[move.type];
+      if (tl) stop = Math.min(COMBAT.hitstopMax + 10, Math.round(stop * tl));
       this.hitstop = Math.max(this.hitstop, stop);
+      d.hitType = move.type || null;
+      this.typeHitFx(d, move.type, stop);
       this.shake(0.08 + res.launch * 0.018 + (superEff ? 0.25 : 0) + (smash ? 0.15 : 0));
       if (heavy) this.cam.punch = Math.max(this.cam.punch || 0, smash ? 0.07 : 0.04);
       if (!this.demo && this.state === 'playing' && res.launch > 8 && this.predictKO(d)) this.finishHit(d, hx, hy);
@@ -1277,6 +1281,39 @@ export class Game {
   isFinalKO(f) {
     if (this.teamMode) return this.players[f.slot].team.every((t) => t === f || t.eliminated);
     return this.mode === 'STOCK' && f.stocks <= 1;
+  }
+
+  // Type flavour on the victim during hit freeze: Electric crackles and buzzes, Ice shatters,
+  // Fire throws embers, Water splashes, Ghost/Poison smoke.
+  typeHitFx(d, type, frames) {
+    const c = d.center;
+    const fx = this.effects;
+    if (type === 'Electric') {
+      for (let i = 0; i < 10; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = 0.35 + Math.random() * 0.5;
+        fx.streaks(c.x + Math.cos(a) * r, c.y + Math.sin(a) * r * 1.3, a + (Math.random() - 0.5) * 2, i % 3 ? 0xfff27a : 0xffffff, 1, 7, 0.1);
+      }
+      fx.light(c.x, c.y, 0xfff080, 8, frames / 60);
+      this.audio.buzz(c.x, frames / 60);
+    } else if (type === 'Ice') {
+      fx.streaks(c.x, c.y, Math.PI / 2, 0xd8f6ff, 10, 9, Math.PI);
+      fx.ring(c.x, c.y, 0xbfeeff, 1.6, 0.3);
+      this.audio.freeze(c.x);
+    } else if (type === 'Fire') {
+      for (let i = 0; i < 14; i++) {
+        fx.add(0, c.x + (Math.random() - 0.5) * d.w, c.y + (Math.random() - 0.5) * d.h * 0.6, 0.2,
+          (Math.random() - 0.5) * 2, 2 + Math.random() * 3, 0, 0.5 + Math.random() * 0.4, 0.06 + Math.random() * 0.05,
+          Math.random() < 0.5 ? 0xff9030 : 0xffd060, { grav: -3, drag: 1.5 });
+      }
+    } else if (type === 'Water') {
+      for (let i = 0; i < 12; i++) {
+        const a = Math.PI * (0.15 + Math.random() * 0.7);
+        fx.add(0, c.x, c.y, 0.2, Math.cos(a) * 5, Math.sin(a) * 6, 0, 0.45, 0.07, 0x8ac8ff, { grav: 20, drag: 1 });
+      }
+    } else if (type === 'Ghost' || type === 'Poison') {
+      for (let i = 0; i < 6; i++) fx.add(1, c.x + (Math.random() - 0.5) * d.w, c.y, 0, (Math.random() - 0.5), 1 + Math.random(), 0, 0.7, 0.18, type === 'Ghost' ? 0x6a4a9a : 0x9a4ab0, { drag: 2, grow: 0.8 });
+    }
   }
 
   // Charging a smash: sparks gather into the fighter, a rising hum, and a flash at full charge.
@@ -1579,6 +1616,7 @@ export class Game {
       p: inMove ? Math.min(1, (f.moveF + (this.hitstop > 0 || f.charging ? 0 : this.alpha || 0)) / f.move.total)
         : f.state === 'getup' ? f.sf / (f.getupTotal || 1) : 0,
       shake: this.hitstop > 0 && f.state === 'hitstun' ? 1 : 0,
+      hitType: this.hitstop > 0 && f.state === 'hitstun' ? f.hitType : null,
       dash: f.state === 'ground' && f.dashF > 0,
       skid: f.state === 'ground' && f.skidF > 0,
       charging: f.charging, tumble: f.tumble, dodge: f.dodge && f.dodge.kind, intangible: f.intangible,

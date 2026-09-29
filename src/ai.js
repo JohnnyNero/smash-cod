@@ -77,6 +77,11 @@ export class CpuBrain {
       mx = good ? px : toCenter;
       my = good ? py : 0;
       if (me.vel.y < -8 && me.pos.y < 1.5 && Math.random() < c.precision * 0.3) tap('shield'); // tech attempt
+      // Off stage once the launch slows: cancel hitstun with a jump back toward the stage.
+      else if (me.launchedHard && me.sf > 30 && Math.abs(me.pos.x) > S.right && Math.random() < c.precision * 0.15) {
+        tap('jump');
+        mx = toCenter;
+      }
     } else if (me.state === 'held') {
       if (Math.random() < 0.5) tap(['attack', 'jump', 'special'][Math.floor(Math.random() * 3)]);
       mx = Math.random() < 0.5 ? 1 : -1;
