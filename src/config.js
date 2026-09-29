@@ -32,6 +32,8 @@ export const COMBAT = {
   hitstunPerLaunch: 0.03, // seconds of hitstun per unit of launch speed
   tumbleAt: 11, // launch speeds above this make you tumble
   baseKbMult: 1, // base knockback is not reduced by weight (only the % growth is)
+  pushWidth: 0.55, // fighters overlap less than this fraction of their combined half-widths before pushing
+  pushMax: 0.045, // max push per frame each (~2.7 m/s): soft enough to dash through
   diMaxDeg: 12, // DI: how far the stick can bend a launch (Ultimate ~9.7, Melee 18)
   asdi: 0.15, // ASDI: position nudge in the stick direction when hitlag ends
   hitstopBase: 3,

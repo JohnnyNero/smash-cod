@@ -204,6 +204,13 @@ target) now always runs: RenderPass -> bloom (high quality only) -> ink -> Outpu
 - KO% table and scripts: `ko.mjs` style sims (attacker Lucario, centre stage): forward smash KOs
   Pikachu ~80%, Blastoise ~115% (145% with good DI).
 
+## Body push
+
+Like Smash (and Rivals), fighters aren't solid: overlapping fighters ease apart with a soft push
+(`Game.bodyPush`, `COMBAT.pushWidth`/`pushMax`), weak enough that dashes and rolls still cross
+through someone, weaker in the air, never shoving anyone off a ledge, and off during dodges,
+grabs, hitstun, ledge hangs, switching and respawns. Walking into someone nudges them along.
+
 ## Finishing blow & off-screen bubbles
 
 - `Game.predictKO` replays the launch physics (hitstun gravity, knockback decay, landing on the

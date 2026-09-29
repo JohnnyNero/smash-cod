@@ -940,6 +940,7 @@ export class Game {
         this.effects.trail(cur.pos.x, cur.pos.y + cur.h * 0.5, cur.colors.main);
       }
     });
+    this.bodyPush();
     this.resolveHits();
     this.spawnSwooshes();
     this.updateProjectiles(SIM_DT);
@@ -948,6 +949,40 @@ export class Game {
       this.timeLeft -= SIM_DT;
       if (this.timeLeft <= 0) this.timeUp();
     }
+  }
+
+  // Smash-style soft push: overlapping fighters ease apart over a few frames. It's weak on
+  // purpose, so dashes and rolls can still cross through someone; it never shoves anyone off a
+  // ledge, and it's off for dodges, grabs, hitstun, ledges and respawning.
+  bodyPush() {
+    const [a, b] = this.fighters;
+    if (!a || !b) return;
+    const free = (f) => f.active && !f.onRevival && !f.dead
+      && !['dodge', 'held', 'holding', 'hitstun', 'ledge', 'getup', 'switching'].includes(f.state);
+    if (!free(a) || !free(b)) return;
+    const dx = b.pos.x - a.pos.x;
+    const minX = (a.w + b.w) * 0.5 * COMBAT.pushWidth;
+    const overlapY = Math.min(a.pos.y + a.h, b.pos.y + b.h) - Math.max(a.pos.y, b.pos.y);
+    if (Math.abs(dx) >= minX || overlapY < Math.min(a.h, b.h) * 0.35) return;
+    const dir = dx !== 0 ? Math.sign(dx) : (a.facing > 0 ? 1 : -1);
+    const air = !a.grounded || !b.grounded;
+    const step = Math.min(COMBAT.pushMax * (air ? 0.4 : 1), (minX - Math.abs(dx)) * 0.5);
+    const nudge = (f, d) => {
+      let nx = f.pos.x + d;
+      if (f.grounded) {
+        // Never push someone off their ledge (they may already be teetering; just don't add to it).
+        const r = f.supportRange();
+        if (r) {
+          const lo = r[0] + f.w * 0.3;
+          const hi = r[1] - f.w * 0.3;
+          if (d < 0 && nx < lo) nx = Math.min(f.pos.x, lo);
+          if (d > 0 && nx > hi) nx = Math.max(f.pos.x, hi);
+        }
+      }
+      f.pos.x = nx;
+    };
+    nudge(a, -dir * step);
+    nudge(b, dir * step);
   }
 
   // ------------------------------------------------------------ combat
