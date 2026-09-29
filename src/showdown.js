@@ -85,7 +85,7 @@ export class ShowdownTurns {
     g.state = 'turnpick';
     g.canAct = false;
     g.touch.setVisible(false);
-    g.ui.showTurnPick(g.players, this.pick, this.n);
+    g.ui.showTurnPick(g.players, this.pick, this.n, g.weather);
     g.ui.log(`— Turn ${this.n} —`, 'turn');
     g.audio.beep(false);
   }
@@ -97,10 +97,15 @@ export class ShowdownTurns {
     g.players.forEach((p, i) => {
       if (p.isCpu || k.picks[i] !== null) return;
       const d = g.input.get(p.device);
+      // The 4 moves sit in a 2x2 grid (0 1 / 2 3) with the switches in a row below.
       const n = k.opts[i].length;
-      if (d.nav.down) k.cursor[i] = (k.cursor[i] + 1) % n;
-      if (d.nav.up) k.cursor[i] = (k.cursor[i] - 1 + n) % n;
-      if (d.nav.down || d.nav.up) g.audio.ui();
+      const c = k.cursor[i];
+      let nc = c;
+      if (d.nav.right) nc = Math.min(n - 1, c + 1);
+      if (d.nav.left) nc = Math.max(0, c - 1);
+      if (d.nav.down) nc = c < 2 ? c + 2 : c < 4 ? Math.min(n - 1, 4) : Math.min(n - 1, c + 1);
+      if (d.nav.up) nc = c >= 4 ? 2 : c >= 2 ? c - 2 : c;
+      if (nc !== c) { k.cursor[i] = nc; g.audio.ui(); }
       if (d.pressed.confirm || d.pressed.attack) this.choose(i, k.cursor[i]);
     });
     g.ui.updateTurnPick(k);

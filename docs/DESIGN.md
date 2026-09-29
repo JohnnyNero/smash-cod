@@ -299,6 +299,20 @@ instead of running through, while rolls still cross through and aerial cross-ups
   flip. The extra clips live in `public/models/charizard_clips.json` (exported from the full
   clip set, loaded with the model).
 
+## Showdown's UI and sprites
+
+The SHOWDOWN-mode turn screen copies Pokémon Showdown's battle UI (`src/showdown.css`; the
+per-type move-button styles are lifted verbatim from Showdown's `sim-types.css`): a battle scene
+on Showdown's meadow background with the animated sprites (P2's front sprite, P1's back sprite,
+from `play.pokemonshowdown.com/sprites/ani` and `ani-back`), Showdown stat bars (name, %,
+status pills, stat changes as "1.5× Atk"; % instead of an HP bar), party icon boxes, and under
+it both players' command panels: "What will Venusaur do?", the 2x2 type-coloured move grid (type,
+PP, and SUPER EFF. / RESISTED / USE NOW tags) and the switch row with party icons. Stick / D-pad
+moves around the grid, A confirms, or tap. Showdown's party icons (cropped from its icon sheet)
+replace the letter portraits on the HUD and appear in the team strips, the select screen and the
+results; the team-preview and KO-pick screens show the animated sprites. Assets are vendored in
+`public/sprites` (~1 MB). The 3D models still do the fighting.
+
 ## SHOWDOWN mode (stage 3): Showdown's turns on top of the real-time fight
 
 A fourth rule set, **SHOWDOWN** (3v3 teams, one stock each, % and ring-outs as usual, no HP bar).

@@ -1820,7 +1820,7 @@ export class Game {
       return {
         slot: p.slot, colors: p.team[0].colors, stats,
         label: p.team.map((f) => f.sp.name.toUpperCase()).join(' · '),
-        team: p.team.map((f) => ({ name: f.sp.name, fainted: f.eliminated })),
+        team: p.team.map((f) => ({ name: f.sp.name, fainted: f.eliminated, model: f.sp.model })),
       };
     });
   }

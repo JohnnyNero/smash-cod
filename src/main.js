@@ -1,4 +1,5 @@
 import './style.css';
+import './showdown.css';
 import { InputManager } from './input.js';
 import { Audio } from './audio.js';
 import { Game } from './game.js';

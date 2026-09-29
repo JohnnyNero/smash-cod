@@ -148,7 +148,7 @@ export class UI {
         </div>`;
       }).join('');
       const teamLine = m.teamRules
-        ? `<div class="team-line">${s.team.map((t, k) => `<span class="${k === s.focus ? 'on' : ''}">${SPECIES[t.species].name}</span>`).join('')}</div>`
+        ? `<div class="team-line">${s.team.map((t, k) => `<span class="${k === s.focus ? 'on' : ''}"><img class="picon sm" src="./sprites/icons/${SPECIES[t.species].model}.png" alt="">${SPECIES[t.species].name}</span>`).join('')}</div>`
         : '';
       const editing = `<div class="editing">EDITING ${sp.name.toUpperCase()} · moves from its real learnset, and its ability</div>`;
       return `<div class="card ${s.ready ? 'is-ready' : ''}" style="--pc:${color}">
@@ -202,10 +202,10 @@ export class UI {
     const moves = Object.entries(f.moveset.specials).map(([slot, mv]) =>
       `<div class="pp" data-slot="${slot}" style="--tc:${TYPE_COLORS[mv.type]}"><i>${SLOT_LABEL[slot]}</i><span class="pn2"></span><em></em><b></b></div>`).join('');
     const strip = this.teamMode
-      ? `<div class="team-strip">${p.team.map((t, k) => `<span data-k="${k}"><i>${['◀', '▲', '▶'][k]}</i>${t.sp.name}<b></b></span>`).join('')}</div>`
+      ? `<div class="team-strip">${p.team.map((t, k) => `<span data-k="${k}"><i>${['◀', '▲', '▶'][k]}</i><img class="picon sm" src="./sprites/icons/${t.sp.model}.png" alt="">${t.sp.name}<b></b></span>`).join('')}</div>`
       : '';
     c.root.innerHTML = `
-      <div class="portrait" style="background:${f.colors.css}">${f.sp.name[0]}</div>
+      <div class="portrait" style="background:${f.colors.css}"><img src="./sprites/icons/${f.sp.model}.png" alt="${f.sp.name[0]}"></div>
       <div class="info">
         <div class="name">${f.sp.name.toUpperCase()} <small>P${f.slot + 1}${f.isCpu ? ' · CPU' : ''}</small></div>
         <div class="types">${f.sp.types.map(typeChip).join('')}</div>
@@ -326,7 +326,7 @@ export class UI {
       const mons = p.team.map((f, idx) => {
         const cls = f.eliminated ? 'fainted' : (showPct && idx === p.active && !k.needs[i]) ? 'in' : '';
         return `<button class="pick-mon ${cls}" data-action="pick" data-slot="${i}" data-row="${idx}" style="--pc:${f.colors.css}">
-          <i>${['◀', '▲', '▶'][idx]}</i><span class="nm">${f.sp.name.toUpperCase()}</span>
+          <i>${['◀', '▲', '▶'][idx]}</i><img class="pick-spr" src="./sprites/front/${f.sp.model}.gif" alt=""><span class="nm">${f.sp.name.toUpperCase()}</span>
           <span class="tp">${f.sp.types.map(typeChip).join('')}</span>
           ${showPct ? `<span class="pc">${f.eliminated ? 'FAINTED' : Math.floor(f.percent) + '%'}${cls === 'in' ? ' · IN' : ''}</span>` : ''}
           ${!f.eliminated ? tag(f, foe) : ''}
@@ -370,33 +370,55 @@ export class UI {
     if (bar) bar.style.width = `${Math.max(0, k.timer / this.pickMax) * 100}%`;
   }
 
-  // ---- Showdown mode: the turn command screen (both players pick in secret).
-  showTurnPick(players, k, turn) {
-    const effTag = (e) => (e === 0 ? '<em class="none">✕ NO EFFECT</em>' : e > 1 ? '<em class="se">▲ SUPER EFFECTIVE</em>' : e < 1 ? '<em class="nve">▼ RESISTED</em>' : '');
-    const cols = players.map((p, i) => {
-      const f = p.team[p.active];
-      const rows = k.opts[i].map((o, r) => {
-        if (o.kind === 'switch') {
-          return `<button class="tp-opt sw ${o.ok ? '' : 'off'}" data-action="tpick" data-slot="${i}" data-row="${r}">
-            <span class="tp-name">⇄ ${o.mon.sp.name.toUpperCase()}</span>
-            <span class="tp-meta">${o.mon.sp.types.map(typeChip).join('')} ${Math.floor(o.mon.percent)}%</span></button>`;
-        }
-        const m = o.move;
-        const what = o.field ? 'USE NOW' : m.cat === 'status' ? 'CALL · STATUS' : 'CALL';
-        return `<button class="tp-opt ${o.ok ? '' : 'off'}" data-action="tpick" data-slot="${i}" data-row="${r}" style="--tc:${TYPE_COLORS[m.type]}">
-          <span class="tp-name">${m.name}</span>
-          <span class="tp-meta"><b>${what}</b> ${m.type.toUpperCase()} · ${o.pp}/${m.pp} PP ${o.field ? '' : effTag(o.eff)}</span></button>`;
-      }).join('');
-      return `<div class="pick-col tp-col" style="--pc:${f.colors.css}">
-        <div class="pick-head">P${i + 1}${p.isCpu ? ' · CPU' : ''} · ${f.sp.name.toUpperCase()}<small>${p.isCpu ? 'deciding…' : '▲▼ choose · A confirm · or tap'}</small></div>
-        <div class="tp-opts" data-opts="${i}">${rows}</div>
-        <div class="pick-lock" data-lock="${i}">CHOOSING…</div>
+  // ---- Showdown mode: the turn command screen, in Showdown's own battle-UI look: the battle
+  // scene (background, animated sprites, stat bars, party icons) over both players' command
+  // panels ("What will Pikachu do?", a 2x2 move grid, the switch row). Both pick in secret.
+  showTurnPick(players, k, turn, weather) {
+    const pf = (i) => players[i].team[players[i].active];
+    const boostText = (b) => Object.entries(b).filter(([, v]) => v).map(([st, v]) => {
+      const m = v >= 0 ? (2 + v) / 2 : 2 / (2 - v);
+      const name = { atk: 'Atk', def: 'Def', spa: 'SpA', spd: 'SpD', spe: 'Spe' }[st] || st;
+      return `<span class="${v > 0 ? 'good' : 'bad'}">${+m.toFixed(2)}&times; ${name}</span>`;
+    }).join(' ');
+    const statbar = (f, side) => `<div class="sd-statbar ${side}"><strong>${f.sp.name} <small>P${f.slot + 1}</small></strong>
+      <span class="pctbox">${Math.floor(f.percent)}%</span>
+      <div class="status">${f.status ? `<span class="${f.status.id}">${STATUS[f.status.id].name}</span>` : ''}${f.state === 'sleep' ? '<span class="slp">SLP</span>' : ''}
+        ${f.confusion > 0 ? '<span class="bad">Confused</span>' : ''} ${boostText(f.boosts)}</div></div>`;
+    const trainer = (p, side) => `<div class="sd-trainer ${side}">P${p.slot + 1}${p.isCpu ? ' (CPU)' : ''}&nbsp;
+      ${p.team.map((t) => `<img src="./sprites/icons/${t.sp.model}.png" class="${t.eliminated ? 'fnt' : ''}" alt="">`).join('')}</div>`;
+    const ally = pf(0);
+    const foe = pf(1);
+    // (The background is set inline: a url() passed through a CSS variable resolves against the
+    // bundled stylesheet's folder instead of the page.)
+    const scene = `<div class="sd-battle" style="background-image:url(./sprites/bg-meadow.jpg)">
+      ${weather ? `<div class="wx ${weather.id}"></div>` : ''}
+      <div class="sd-turnbox">Turn ${turn}</div><div class="sd-timer" data-sdtimer></div>
+      <div class="sd-shadow foe"></div><img class="sd-mon foe" src="./sprites/front/${foe.sp.model}.gif" alt="">
+      <div class="sd-shadow ally"></div><img class="sd-mon ally" src="./sprites/back/${ally.sp.model}.gif" alt="">
+      ${statbar(foe, 'foe')}${statbar(ally, 'ally')}${trainer(players[1], 'foe')}${trainer(players[0], 'ally')}
+    </div>`;
+    const effTag = (o) => {
+      if (o.field) return '<span class="tag now">USE NOW</span>';
+      if (o.eff === 0) return '<span class="tag none">NO EFFECT</span>';
+      if (o.eff > 1) return '<span class="tag se">SUPER EFF.</span>';
+      if (o.eff < 1) return '<span class="tag nve">RESISTED</span>';
+      return '';
+    };
+    const sides = players.map((p, i) => {
+      const f = pf(i);
+      const opts = k.opts[i];
+      const moves = opts.map((o, r) => (o.kind !== 'move' ? '' : `<button class="movebutton type-${o.move.type} ${o.ok ? '' : 'off'}" data-action="tpick" data-slot="${i}" data-row="${r}">
+          <span class="nm">${o.move.name}</span>${effTag(o)}<small class="type">${o.move.type}</small><small class="pp">${o.pp}/${o.move.pp}</small></button>`)).join('');
+      const sw = opts.map((o, r) => (o.kind !== 'switch' ? '' : `<button data-action="tpick" data-slot="${i}" data-row="${r}">
+          <img src="./sprites/icons/${o.mon.sp.model}.png" alt="">${o.mon.sp.name}<small>${Math.floor(o.mon.percent)}%</small></button>`)).join('');
+      return `<div class="sd-side" data-side="${i}" style="--pc:${f.colors.css}">
+        <div class="whatdo">What will <b>${f.sp.name}</b> do?${p.isCpu ? ' <small>CPU</small>' : ''}</div>
+        <h4>Attack</h4><div class="movemenu">${moves}</div>
+        ${sw ? `<h4 class="sw">Switch</h4><div class="switchmenu">${sw}</div>` : ''}
+        <div class="lock" data-lock="${i}">✔ Locked in (secret)</div>
       </div>`;
-    }).join('<div class="pick-vs">VS</div>');
-    this.screens.picks.innerHTML = `<div class="pick-panel tp-panel">
-      <h2>TURN ${turn}</h2><div class="pick-sub">Pick in secret: <b>call</b> a move (it hits harder and its effect always lands this turn), use a field move now, or <b>switch</b>. Switches go first, then priority, then Speed.</div>
-      <div class="pick-cols">${cols}</div>
-      <div class="pick-timer"><i></i></div></div>`;
+    }).join('');
+    this.screens.picks.innerHTML = `<div class="sd-ui">${scene}<div class="sd-bar"><i></i></div><div class="sd-controls">${sides}</div></div>`;
     this.screens.picks.classList.remove('hidden');
     this.pickMax = k.timer;
     this.updateTurnPick(k);
@@ -405,12 +427,15 @@ export class UI {
   updateTurnPick(k) {
     const root = this.screens.picks;
     k.picks.forEach((v, i) => {
-      root.querySelectorAll(`[data-opts="${i}"] .tp-opt`).forEach((b, r) => {
-        b.classList.toggle('cur', v === null && k.cursor[i] === r);
-        b.classList.toggle('hide', v !== null); // your pick stays secret once locked
-      });
+      const side = root.querySelector(`[data-side="${i}"]`);
+      if (!side) return;
+      side.classList.toggle('locked', v !== null);
+      side.querySelectorAll('button[data-row]').forEach((b) => b.classList.toggle('cur', v === null && +b.dataset.row === k.cursor[i]));
     });
-    this.updatePicks(k);
+    const bar = root.querySelector('.sd-bar i');
+    if (bar) bar.style.width = `${Math.max(0, k.timer / this.pickMax) * 100}%`;
+    const t = root.querySelector('[data-sdtimer]');
+    if (t) t.textContent = `${Math.max(0, Math.ceil(k.timer))}s`;
   }
 
   // Turn clock (Showdown mode) and weather, top centre.
@@ -533,7 +558,8 @@ export class UI {
     ];
     s.innerHTML = `<div class="panel">
       <div class="winner" style="--pc:${w ? w.colors.css : '#fff'}">${w ? `P${w.slot + 1} WINS` : 'DRAW'}</div>
-      <table><tr><th></th>${summaries.map((f) => `<th style="color:${f.colors.css}">P${f.slot + 1}<br><small>${f.label}</small></th>`).join('')}</tr>
+      <table><tr><th></th>${summaries.map((f) => `<th style="color:${f.colors.css}">P${f.slot + 1}<br>
+        <span class="res-team">${f.team.map((t) => `<img class="picon ${t.fainted ? 'fnt' : ''}" src="./sprites/icons/${t.model}.png" alt="${t.name}" title="${t.name}">`).join('')}</span></th>`).join('')}</tr>
       ${rows.map(([k, fn]) => `<tr><td>${k}</td>${summaries.map((f) => `<td>${fn(f)}</td>`).join('')}</tr>`).join('')}
       </table>
       <div class="result-btns">
