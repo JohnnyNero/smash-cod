@@ -877,7 +877,7 @@ export class Game {
         break;
       case 'turnpick':
         this.sd.updatePick(dt);
-        if (this.state === 'turnpick') this.updateVisuals(0);
+        if (this.state === 'turnpick') this.updateVisuals(dt); // staged idle + the camera sweep
         break;
       case 'turnresolve':
         this.sd.updateResolve(dt);
@@ -1878,7 +1878,17 @@ export class Game {
     this.fighters.forEach((f, i) => {
       const m = f.model;
       m.root.visible = f.active;
-      if (f.active) {
+      if (f.active && this.sdStaged()) {
+        // Staged on Showdown's spots, facing each other, idling (the fight resumes where it was).
+        const me = SD_SPOT[i];
+        const foe = SD_SPOT[1 - i];
+        m.root.position.set(me.x, 0, me.z);
+        m.update({
+          ...this.fighterView(f), state: 'ground', grounded: true, vx: 0, vy: 0, flip: -1, tumble: false, dash: false,
+          skid: false, shake: 0, zipDir: null, dodge: null, anim: null, hits: null, p: 0, charging: false,
+          yaw: Math.atan2(foe.x - me.x, foe.z - me.z), showTag: false,
+        }, dt);
+      } else if (f.active) {
         const [x, y] = lerpPos(f.px, f.py, f.pos.x, f.pos.y);
         m.root.position.set(x, y, 0);
         m.update(this.fighterView(f), dt);
@@ -1923,10 +1933,14 @@ export class Game {
       if (pr.p.visual === 'flame') pr.mesh.scale.setScalar(0.7 + (1 - pr.life / pr.p.life) * 1.2);
     }
     this.effects.update(dt);
-    if (!this.demo) this.updateBubbles();
+    if (!this.demo && !this.sdStaged()) this.updateBubbles();
+    else if (this.sdStaged()) this.ui.updateBubbles([]);
+    // The turn screen has its own Showdown stat bars: hide the fight HUD under it.
+    this.ui.screens.hud.classList.toggle('sd-hide', this.sdStaged());
     if (!this.demo && this.fighters.length) this.ui.updateHUD(this.players, this.settings, this.timeLeft, this.teamMode);
     if (!this.demo && this.fighters.length) {
-      this.ui.updateField(this.showdownMode ? { turn: this.sd.n, t: this.state === 'playing' ? this.sd.t : null } : null, this.weather);
+      this.ui.updateField(this.sdStaged() ? null : this.showdownMode ? { turn: this.sd.n, t: this.state === 'playing' ? this.sd.t : null } : null,
+        this.sdStaged() ? null : this.weather);
     }
   }
 
@@ -2068,7 +2082,55 @@ export class Game {
     const ox = s * 0.9 * Math.sin(t * 1.1) * Math.cos(t * 0.37);
     const oy = s * 0.9 * Math.sin(t * 0.9 + 2) * Math.cos(t * 0.53);
     const lift = this.state === 'select' ? 0.6 : 1.4;
-    this.camera.position.set(c.x + ox, c.y + lift + oy, c.dist * (1 - c.punch));
-    this.camera.lookAt(c.x + ox * 0.5, c.y + (this.state === 'select' ? 0.2 : 0.3), 0);
+    const pos = this._camPos || (this._camPos = new THREE.Vector3());
+    const look = this._camLook || (this._camLook = new THREE.Vector3());
+    pos.set(c.x + ox, c.y + lift + oy, c.dist * (1 - c.punch));
+    look.set(c.x + ox * 0.5, c.y + (this.state === 'select' ? 0.2 : 0.3), 0);
+    // Showdown mode's turn screen: sweep round behind P1's Pokémon to Showdown's battle angle.
+    const want = this.sdStaged() ? 1 : 0;
+    this.sdBlend = (this.sdBlend || 0) + (want - (this.sdBlend || 0)) * Math.min(1, dt * (want ? 2.6 : 4));
+    const b = this.sdBlend < 0.001 ? 0 : this.sdBlend;
+    if (b > 0) {
+      const e = b * b * (3 - 2 * b); // smoothstep
+      pos.lerp(SD_CAM.pos, e);
+      look.lerp(SD_CAM.look, e);
+    }
+    this.camera.position.copy(pos);
+    this.camera.lookAt(look);
+    // Centre the staged battle in the space the command panels leave (shift the projection up).
+    const shift = b > 0 ? this.sdDockLift() * b * b * (3 - 2 * b) : 0;
+    if (shift > 0.5) {
+      const W = window.innerWidth || 1;
+      const H = window.innerHeight || 1;
+      this.camera.setViewOffset(W, H, 0, shift, W, H);
+      this._viewOffset = true;
+    } else if (this._viewOffset) {
+      this.camera.clearViewOffset();
+      this._viewOffset = false;
+    }
+  }
+
+  // Pixels to shift the view by so the battle sits centred above the turn screen's command dock.
+  sdDockLift() {
+    if (this._dockT !== undefined && this.realTime - this._dockT < 0.4) return this._dockLift;
+    this._dockT = this.realTime;
+    const dock = document.querySelector('.sd-live .sd-dock');
+    const r = dock && dock.getBoundingClientRect();
+    this._dockLift = r && r.height ? r.height * 0.5 : 0;
+    return this._dockLift;
+  }
+
+  // Showdown mode's turn screen shows the battle from P1's side, Showdown-style.
+  sdStaged() {
+    return this.showdownMode && (this.state === 'turnpick' || this.state === 'turnresolve') && this.fighters.length === 2;
   }
 }
+
+// Showdown's two battle spots on the main platform (P1 near the camera, P2 far back) and the
+// camera behind P1's shoulder looking across at P2.
+const SD_SPOT = [{ x: -3.0, z: 2.3 }, { x: 2.6, z: -2.1 }];
+const SD_CAM = {
+  pos: new THREE.Vector3(-9, 4.2, 11.5),
+  look: new THREE.Vector3(3.4, 0.2, -2.2),
+};
+Game.SD_CAM = SD_CAM; // (exposed for tuning)

@@ -395,13 +395,11 @@ export class UI {
       ${p.team.map((t) => `<img src="./sprites/icons/${t.sp.model}.png" class="${t.eliminated ? 'fnt' : ''}" alt="">`).join('')}</div>`;
     const ally = pf(0);
     const foe = pf(1);
-    // (The background is set inline: a url() passed through a CSS variable resolves against the
-    // bundled stylesheet's folder instead of the page.)
-    const scene = `<div class="sd-battle" style="background-image:url(./sprites/bg-meadow.jpg)">
-      ${weather ? `<div class="wx ${weather.id}"></div>` : ''}
-      <div class="sd-turnbox">Turn ${turn}</div><div class="sd-timer" data-sdtimer></div>
-      <div class="sd-shadow foe"></div><img class="sd-mon foe" src="./sprites/front/${foe.sp.model}.gif" alt="">
-      <div class="sd-shadow ally"></div><img class="sd-mon ally" src="./sprites/back/${ally.sp.model}.gif" alt="">
+    // Over the live 3D view (the camera has swept round behind P1's Pokémon): Showdown's layout,
+    // foe's stat bar top left, yours bottom right, each trainer's party beside them.
+    const scene = `<div class="sd-overlay">
+      <div class="sd-turnbox">Turn ${turn}<span data-sdtimer></span></div>
+      ${weather ? `<div class="sd-wx ${weather.id}">${weather.id === 'sun' ? '☀ Harsh sunlight' : '☂ Rain'}</div>` : ''}
       ${statbar(foe, 'foe')}${statbar(ally, 'ally')}${trainer(players[1], 'foe')}${trainer(players[0], 'ally')}
     </div>`;
     const effTag = (o) => {
@@ -418,15 +416,16 @@ export class UI {
           <span class="nm">${o.move.name}</span>${effTag(o)}<small class="type">${o.move.type}</small><small class="pp">${o.pp}/${o.move.pp}</small></button>`)).join('');
       const sw = opts.map((o, r) => (o.kind !== 'switch' ? '' : `<button data-action="tpick" data-slot="${i}" data-row="${r}">
           <img src="./sprites/icons/${o.mon.sp.model}.png" alt="">${o.mon.sp.name}<small>${Math.floor(o.mon.percent)}%</small></button>`)).join('');
-      return `<div class="sd-side" data-side="${i}" style="--pc:${f.colors.css}">
+      return `<div class="sd-side ${p.isCpu ? 'cpu' : ''}" data-side="${i}" style="--pc:${f.colors.css}">
         <div class="whatdo">What will <b>${f.sp.name}</b> do?${p.isCpu ? ' <small>CPU</small>' : ''}</div>
         <h4>Attack</h4><div class="movemenu">${moves}</div>
         ${sw ? `<h4 class="sw">Switch</h4><div class="switchmenu">${sw}</div>` : ''}
         <div class="lock" data-lock="${i}">✔ Locked in (secret)</div>
       </div>`;
     }).join('');
-    this.screens.picks.innerHTML = `<div class="sd-ui">${scene}<div class="sd-bar"><i></i></div><div class="sd-controls">${sides}</div></div>`;
+    this.screens.picks.innerHTML = `<div class="sd-ui sd-live">${scene}<div class="sd-dock"><div class="sd-bar"><i></i></div><div class="sd-controls">${sides}</div></div></div>`;
     this.screens.picks.classList.remove('hidden');
+    this.screens.picks.classList.add('live'); // no dimming: the 3D battle view shows through
     this.pickMax = k.timer;
     this.updateTurnPick(k);
   }
@@ -442,7 +441,7 @@ export class UI {
     const bar = root.querySelector('.sd-bar i');
     if (bar) bar.style.width = `${Math.max(0, k.timer / this.pickMax) * 100}%`;
     const t = root.querySelector('[data-sdtimer]');
-    if (t) t.textContent = `${Math.max(0, Math.ceil(k.timer))}s`;
+    if (t) t.textContent = ` · ${Math.max(0, Math.ceil(k.timer))}s`;
   }
 
   // Turn clock (Showdown mode) and weather, top centre.
@@ -464,6 +463,7 @@ export class UI {
 
   hidePicks() {
     this.screens.picks.classList.add('hidden');
+    this.screens.picks.classList.remove('live');
     this.screens.picks.innerHTML = '';
   }
 

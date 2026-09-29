@@ -299,6 +299,19 @@ instead of running through, while rolls still cross through and aerial cross-ups
   flip. The extra clips live in `public/models/charizard_clips.json` (exported from the full
   clip set, loaded with the model).
 
+## Turn screen in 3D: Showdown's camera
+
+When a SHOWDOWN-mode turn screen opens, the camera sweeps (smoothstep, ~0.5 s) round behind
+P1's Pokémon to Showdown's battle angle: both Pokémon are staged on Showdown's two spots on the
+main platform (`SD_SPOT`: P1 near the camera, P2 far back), facing each other and idling, and
+the 2D sprite box is gone: Showdown's stat bars (foe's top left, yours bottom right), the party
+boxes, the turn clock and weather tag sit over the live 3D view, with both players' command
+panels docked along the bottom. The projection is shifted (`setViewOffset`, measured from the
+dock's height) so the battle stays centred in the space above the panels on any screen. The
+fight HUD, off-screen bubbles and the field bar hide underneath; a CPU's command panel shrinks
+to a narrow "locked in" strip. When the turn resolves the camera sweeps back and the Pokémon
+are exactly where the fight left them. The fight HUD cards are now frosted glass.
+
 ## Showdown theme across the whole UI
 
 `src/theme.css` (loaded last) re-skins every screen in Showdown's look, slightly improved:

@@ -499,3 +499,45 @@
   .pick-mon { grid-template-columns: 22px 44px 1fr auto !important; }
   .pick-mon .pick-spr { max-width: 44px; max-height: 38px; }
 }
+
+/* ---- turn screen over the live 3D view (camera behind P1's Pokémon) ---- */
+.picks.live { background: none; padding: 0; align-items: stretch; justify-content: stretch; }
+.sd-live { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: flex-end; pointer-events: none; --dock: 210px; }
+.sd-live button { pointer-events: auto; }
+.sd-overlay { position: absolute; inset: 0; pointer-events: none; }
+.sd-live .sd-turnbox { left: 50%; top: calc(8px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); }
+.sd-live .sd-wx { position: absolute; left: 50%; top: calc(40px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); background: rgba(255, 255, 255, 0.85); border-radius: 4px; padding: 1px 8px; font-size: 9pt; font-weight: bold; }
+.sd-wx.sun { color: #b86a00; } .sd-wx.rain { color: #2a5ab0; }
+.sd-live .sd-statbar { width: 190px; background: rgba(255, 255, 255, 0.55); border-radius: 6px; padding: 4px 6px 5px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); backdrop-filter: blur(4px); }
+.sd-live .sd-statbar.foe { left: 6%; top: 12%; right: auto; transform: none; }
+.sd-live .sd-statbar.ally { right: 6%; left: auto; top: auto; bottom: calc(var(--dock) + 18px); transform: none; }
+.sd-live .sd-trainer.foe { right: 16px; top: calc(12px + env(safe-area-inset-top, 0px)); }
+.sd-live .sd-trainer.ally { left: 16px; bottom: calc(var(--dock) + 18px); top: auto; }
+.sd-dock { position: relative; padding: 0 10px calc(10px + env(safe-area-inset-bottom, 0px)); pointer-events: auto; }
+.sd-live .sd-controls { width: min(1000px, 100%); }
+.sd-live .sd-side { background: rgba(248, 248, 248, 0.9); border-radius: 6px; box-shadow: 0 3px 12px rgba(0, 0, 0, 0.3); }
+.sd-live .sd-bar { width: min(1000px, 100%); border-radius: 2px; }
+@media (max-height: 460px) {
+  .sd-live { --dock: 165px; }
+  .sd-live .sd-statbar { width: 150px; }
+  .sd-live .sd-statbar.foe { top: 6%; }
+}
+
+.sd-hide { opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+.sd-live .sd-statbar.foe { left: 30%; top: 16%; }
+
+/* A CPU's command panel only ever says "locked in": keep it a narrow strip. */
+.sd-side.cpu { flex: 0 0 170px; }
+.sd-side.cpu .movemenu, .sd-side.cpu .switchmenu, .sd-side.cpu h4 { display: none; }
+.sd-live .sd-statbar.foe { left: 5%; top: 22%; }
+@media (max-height: 460px) {
+  .sd-live .sd-side h4 { display: none; }
+  .sd-live .sd-side .whatdo { margin: 0 0 2px; font-size: 8pt; }
+  .sd-live .movebutton { height: 30px; padding-top: 2px; font-size: 8.5pt; }
+  .sd-live .movebutton .tag { top: 1px; font-size: 6pt; }
+  .sd-live .switchmenu { margin-top: 3px; }
+  .sd-live .switchmenu button { height: 24px; }
+  .sd-live .sd-side { padding: 3px 6px 4px; }
+  .sd-live .sd-statbar.foe { top: 16%; }
+  .sd-live .sd-trainer img { width: 30px; height: 22px; }
+}
