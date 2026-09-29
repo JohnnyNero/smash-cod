@@ -11,7 +11,7 @@ import { PLAYER_COLORS } from './config.js';
 import { Game } from './game.js';
 import { choreoFor, phaseU } from './models/choreo.js';
 
-const LOOPS = ['idle', 'walk', 'run', 'dash', 'skid', 'jump', 'double jump', 'shield', 'hitstun', 'sleep', 'victory'];
+const LOOPS = ['idle', 'walk', 'run', 'dash', 'skid', 'jump', 'double jump', 'shield', 'hitstun', 'sleep', 'victory', 'taunt up', 'taunt side', 'taunt down', 'faint'];
 const NORMAL_ORDER = ['jab', 'ftilt', 'utilt', 'dtilt', 'dash', 'fsmash', 'usmash', 'dsmash', 'nair', 'fair', 'bair', 'uair', 'dair', 'grab'];
 
 const css = `
@@ -153,6 +153,10 @@ export function startLab(game) {
       case 'hitstun': return { ...base, state: 'hitstun', grounded: false, vx: -8 * S.facing, vy: 6, flash: Math.max(0, 1 - cyc * 3) };
       case 'sleep': return { ...base, state: 'sleep' };
       case 'victory': return { ...base, victory: true };
+      case 'taunt up': return { ...base, state: 'taunt', taunt: 'roar' };
+      case 'taunt side': return { ...base, state: 'taunt', taunt: 'angry' };
+      case 'taunt down': return { ...base, state: 'taunt', taunt: 'happy' };
+      case 'faint': return { ...base, faint: true };
       default: return base;
     }
   }

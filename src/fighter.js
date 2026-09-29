@@ -11,6 +11,7 @@ import { buildMoveset } from './data/moveset.js';
 import { fighterStats } from './data/pokemon.js';
 
 const DT = 1 / 60;
+const FIGHTER_TAUNT_FRAMES = 75;
 const BUFFERED = ['jump', 'attack', 'special', 'shield', 'grab', 'smash'];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const approach = (v, target, step) => (v < target ? Math.min(v + step, target) : Math.max(v - step, target));
@@ -117,6 +118,7 @@ export class Fighter {
     }
     this.t += dt;
     if (this.flipF > 0) this.flipF--;
+    if (this.coyoteF > 0 && (this.grounded || --this.coyoteF === 0)) this.coyoteF = 0;
     this.flash = Math.max(0, this.flash - dt * 5);
     this.landSquash = Math.max(0, this.landSquash - dt * 5);
     if (this.invuln > 0) this.invuln--;
@@ -196,6 +198,14 @@ export class Fighter {
         break;
       case 'sleep':
         this.runSleep();
+        break;
+      case 'trumped':
+        this.airDrift(0.3);
+        if (this.sf >= LEDGE.trumpFrames) this.setState(this.grounded ? 'ground' : 'air');
+        break;
+      case 'taunt':
+        this.vel.x = approach(this.vel.x, 0, PHYS.groundFriction * DT);
+        if (this.sf >= FIGHTER_TAUNT_FRAMES || !this.grounded) this.toNeutral();
         break;
       case 'switching':
         // Recall wind-up: you can be hit out of it.
@@ -277,6 +287,7 @@ export class Fighter {
       return;
     }
     if (inp.pressed.swap && this.tryStartSwitch()) return;
+    if (inp.pressed.taunt) { this.startTaunt(); return; }
     if (inp.pressed.jump) { this.consume('jump'); this.setState('jumpsquat'); return; }
     if (inp.pressed.grab || (inp.held.shield && inp.pressed.attack)) { this.startMove(n.grab); return; }
     if (inp.pressed.special) { this.startSpecial(); return; }
@@ -346,6 +357,16 @@ export class Fighter {
     this.vel.x = approach(this.vel.x, sx * speed, rate * DT);
   }
 
+  // Taunt: up roars, side glares, down cheers (the Pokémon's own Sword/Shield clips). Fully
+  // committal, like Smash's.
+  startTaunt() {
+    const dir = this.inp.tauntDir || (this.sy > 0.5 ? 'up' : this.sy < -0.5 ? 'down' : Math.abs(this.sx) > 0.5 ? 'side' : 'up');
+    this.taunt = { up: 'roar', side: 'angry', down: 'happy' }[dir];
+    if (Math.abs(this.sx) > 0.5) this.facing = Math.sign(this.sx);
+    this.setState('taunt');
+    if (this.taunt === 'roar' || Math.random() < 0.5) this.game.audio.cry(this.model.species.model, this.pos.x, { gain: 0.4 });
+  }
+
   groundAttack() {
     const n = this.moveset.normals;
     const { sx, sy } = this;
@@ -381,6 +402,15 @@ export class Fighter {
   airControl() {
     const inp = this.inp;
     if (inp.pressed.swap && this.tryStartSwitch()) return;
+    if (inp.pressed.jump && this.coyoteF > 0) {
+      // Late jump off an edge: counts as the ground jump, keeping the double jump.
+      this.consume('jump');
+      this.coyoteF = 0;
+      this.vel.y = this.inp.held.jump ? this.st.jump : this.st.jump * 0.72;
+      this.vel.x = this.sx * this.st.airSpeed * 0.9 + this.vel.x * 0.3;
+      this.game.audio.jump(this.pos.x, false);
+      return;
+    }
     if (inp.pressed.jump && this.airJumps > 0) {
       this.consume('jump');
       this.airJumps--;
@@ -421,7 +451,12 @@ export class Fighter {
         this.vel.x = approach(this.vel.x, target, PHYS.airAccel * DT);
       }
     }
-    if (this.flickT === 0 && this.flickY < -0.7 && this.vel.y < 3 && !this.fastFall) {
+    // Fast fall: flick down at or after the peak. A flick shortly before the peak is
+    // remembered and kicks in as soon as you start to fall.
+    if (this.flickT === 0 && this.flickY < -0.7) this.ffBuf = PHYS.fastFallBuffer;
+    else if (this.ffBuf > 0) this.ffBuf--;
+    if (this.ffBuf > 0 && this.vel.y < 1.5 && !this.fastFall) {
+      this.ffBuf = 0;
       this.fastFall = true;
       this.game.effects.glint(this.pos.x, this.pos.y + this.h * 0.5); // Smash's fast-fall sparkle
     }
@@ -431,7 +466,7 @@ export class Fighter {
     this.grounded = false;
     this.platform = null;
     if (this.state === 'attack') this.moveLeftGround = true;
-    if (['ground', 'shield', 'landlag'].includes(this.state)) this.setState('air');
+    if (['ground', 'shield', 'landlag', 'taunt'].includes(this.state)) this.setState('air');
   }
 
   // ------------------------------------------------------------------ moves
@@ -592,6 +627,14 @@ export class Fighter {
     if (this.holding) this.releaseGrab(false);
     if (this.grounded) this.setState('ground');
     else this.setState(m && m.helpless ? 'helpless' : 'air');
+  }
+
+  // Clank: our attack met theirs and bounced off. The move ends in a short recoil.
+  rebound(frames) {
+    if (this.holding) this.releaseGrab(false);
+    this.charging = false;
+    this.vel.x = -this.facing * 3;
+    this.landLag(frames);
   }
 
   landLag(frames) {
@@ -814,7 +857,9 @@ export class Fighter {
       if (out < -0.4 || out > this.w / 2 + LEDGE.reachX) continue;
       const hands = this.pos.y + this.h * 0.85;
       if (hands < S.top - LEDGE.reachDown || hands > S.top + LEDGE.reachUp) continue;
-      if (this.game.ledgeOccupied(side, this)) continue;
+      // Someone already hanging there gets popped off (a ledge trump), like Ultimate.
+      const occ = this.game.ledgeOccupied(side, this);
+      if (occ) occ.ledgeTrumped();
       this.grabLedge(side);
       return;
     }
@@ -835,8 +880,21 @@ export class Fighter {
     this.airDodgeReady = true;
     this.fastFall = false;
     this.tumble = false;
-    this.ledgeInvuln = LEDGE.invulnFrames;
+    const R = LEDGE.regrabInvuln;
+    this.ledgeInvuln = R[Math.min(R.length - 1, this.ledgeGrabs || 0)];
+    this.ledgeGrabs = (this.ledgeGrabs || 0) + 1;
     this.game.audio.ledge(this.pos.x);
+  }
+
+  ledgeTrumped() {
+    const side = this.ledge;
+    this.ledge = null;
+    this.pos.x += side * 0.3;
+    this.vel.x = side * 3.5;
+    this.vel.y = 5;
+    this.ledgeCooldown = LEDGE.trumpFrames + 10;
+    this.setState('trumped');
+    this.game.effects.sparks(this.pos.x, this.pos.y + this.h * 0.8, side, 0.6, 0xffffff, 6, 6);
   }
 
   ledgeControl() {
@@ -944,9 +1002,11 @@ export class Fighter {
       const sup = this.supportRange();
       // Rolls, shields and grounded attacks stop at the edge instead of sliding off it
       // (zips like Quick Attack can still leave the ground).
-      const stopsAtEdge = ['dodge', 'shield', 'shieldbreak', 'holding', 'landlag'].includes(this.state) || (this.state === 'attack' && !this.zip);
+      const stopsAtEdge = ['dodge', 'shield', 'shieldbreak', 'holding', 'landlag', 'taunt'].includes(this.state) || (this.state === 'attack' && !this.zip);
       if (sup && stopsAtEdge) nx = clamp(nx, sup[0], sup[1]);
       if (!sup || nx < sup[0] || nx > sup[1] || this.vel.y > 0) {
+        // Walked or ran off an edge: a few frames of "coyote time" to still jump from the ground.
+        if (this.state === 'ground' && this.vel.y <= 0) this.coyoteF = PHYS.coyoteFrames;
         this.leaveGround();
       } else {
         ny = sup[2];
@@ -1058,6 +1118,7 @@ export class Fighter {
 
   touchDown(platform, impact) {
     this.grounded = true;
+    this.ledgeGrabs = 0;
     this.platform = platform;
     this.vel.y = 0;
     this.airJumps = this.st.airJumps;

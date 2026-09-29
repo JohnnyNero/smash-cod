@@ -375,7 +375,17 @@ export class Game {
         this.previews[i] = null;
         if (species) {
           const model = new CreatureModel({ species: SPECIES[species], colors: PLAYER_COLORS[i], label: `P${i + 1}` });
-          model.root.position.set(i === 0 ? -0.95 : 0.95, 0, 1);
+          // Fit each preview into its own box so big Pokémon (Charizard's wings) never overlap.
+          const box = new THREE.Box3();
+          model.root.updateMatrixWorld(true);
+          model.root.traverse((o) => {
+            if ((o.isMesh || o.isSkinnedMesh) && o !== model.shield && o !== model.aura && [].concat(o.material).every((m) => m.blending !== THREE.AdditiveBlending)) box.expandByObject(o);
+          });
+          const size = box.isEmpty() ? new THREE.Vector3(1, model.h, 1) : box.getSize(new THREE.Vector3());
+          const fit = Math.min(1.25, 1.75 / Math.max(0.1, size.y), 1.45 / Math.max(0.1, Math.max(size.x, size.z) * 0.8));
+          model.root.scale.setScalar(fit);
+          model.previewScale = fit;
+          model.root.position.set(i === 0 ? -1.12 : 1.12, 0, 1);
           this.scene.add(model.root);
           this.previews[i] = { key: species, model };
         }
@@ -776,6 +786,7 @@ export class Game {
   // ------------------------------------------------------------ main loop
 
   frame(dt) {
+    this.input.battle = ['countdown', 'playing', 'gameover'].includes(this.state);
     this.input.update(dt);
     if (this.input.anyInput) {
       this.audio.unlock();
@@ -1012,7 +1023,7 @@ export class Game {
   }
 
   ledgeOccupied(side, me) {
-    return this.fighters.some((f) => f !== me && f.state === 'ledge' && f.ledge === side);
+    return this.fighters.find((f) => f !== me && f.state === 'ledge' && f.ledge === side) || null;
   }
 
   onMoveStart(f, m) {
@@ -1031,7 +1042,44 @@ export class Game {
   }
 
   // Melee hitboxes: each move hits each target at most once.
+  // Clanks (Smash's priority): two grounded attacks whose hitboxes meet cancel out if their
+  // damage is within COMBAT.clankRange; otherwise only the weaker one rebounds and the stronger
+  // carries on. Aerials pass through each other, as in Smash.
+  resolveClanks() {
+    const [a, b] = this.fighters;
+    if (!a || !b || !a.active || !b.active) return;
+    const live = (f) => f.state === 'attack' && f.move && f.move.hitboxes && f.grounded && !f.move.aerial && f.curF >= 0 && !f.move.special;
+    if (!live(a) || !live(b)) return;
+    const active = (f) => f.move.hitboxes.filter((hb) => !hb.grab && hb.dmg && f.curF >= hb.f[0] && f.curF <= hb.f[1]);
+    for (const ha of active(a)) {
+      for (const hb of active(b)) {
+        const ax = a.pos.x + ha.x * a.facing; const ay = a.pos.y + ha.y;
+        const bx = b.pos.x + hb.x * b.facing; const by = b.pos.y + hb.y;
+        if (Math.hypot(ax - bx, ay - by) > ha.r + hb.r) continue;
+        const key = `${a.moveSerial}:${b.moveSerial}`;
+        if (this.lastClank === key) continue; // (the winner of an uneven clank carries on)
+        this.lastClank = key;
+        const da = ha.dmg * (a.move.smash ? a.chargeMult : 1);
+        const db = hb.dmg * (b.move.smash ? b.chargeMult : 1);
+        const mx = (ax + bx) / 2; const my = (ay + by) / 2;
+        const lag = (d) => 10 + Math.round(d * 0.6);
+        if (Math.abs(da - db) <= COMBAT.clankRange) { a.rebound(lag(da)); b.rebound(lag(db)); }
+        else if (da < db) a.rebound(lag(da));
+        else b.rebound(lag(db));
+        this.effects.impact(mx, my, 0xffffff, 1.2, 0.16);
+        this.effects.sparks(mx, my, 0, 0, 0xfff0c0, 14, 10);
+        this.effects.ring(mx, my, 0xffffff, 1.4, 0.2);
+        this.audio.block(mx);
+        this.audio.hit(mx, Math.max(da, db) * 0.6);
+        this.hitstop = Math.max(this.hitstop, 6);
+        this.shake(0.12);
+        return;
+      }
+    }
+  }
+
   resolveHits() {
+    this.resolveClanks();
     for (const a of this.fighters) {
       if (a.state !== 'attack' || !a.move || !a.move.hitboxes || a.curF < 0) continue;
       for (const hb of a.move.hitboxes) {
@@ -1109,14 +1157,26 @@ export class Game {
     const color = move.type ? hexColor(TYPE_COLORS[move.type] || '#ffffff') : 0xffffff;
     if (res.result === 'hit') {
       a.stats.hits++;
-      const heavy = res.launch > 10;
+      const smash = !!move.smash;
+      const heavy = res.launch > 10 || (smash && res.launch > 6);
       const superEff = dmg.eff > 1;
-      this.effects.sparks(hx, hy, dirSign, 0.5, color, heavy || superEff ? 16 : 7, heavy ? 14 : 9);
+      // Contact: a star burst at the hit point, speed-line sparks along the launch direction
+      // and a spray of embers back past the attacker's swing.
+      const lv = Math.hypot(d.vel.x, d.vel.y);
+      const ang = lv > 0.5 ? Math.atan2(d.vel.y, d.vel.x) : dirSign > 0 ? 0.25 : Math.PI - 0.25;
+      this.effects.impact(hx, hy, 0xffffff, 0.35 + Math.min(0.6, dmg.damage * 0.03) + (heavy ? 0.25 : 0));
+      if (heavy || superEff) this.effects.impact(hx, hy, color, 0.9 + Math.min(0.6, res.launch * 0.025), 0.18);
+      this.effects.streaks(hx, hy, ang, heavy || superEff ? color : 0xfff4d0, heavy ? 16 : 7, 12 + res.launch * 0.9, heavy ? 0.3 : 0.45);
+      this.effects.sparks(hx, hy, dirSign, 0.5, color, heavy || superEff ? 12 : 5, heavy ? 12 : 8);
       this.effects.ring(hx, hy, heavy || superEff ? color : 0xffffff, heavy ? 2.2 : 1.1, heavy ? 0.3 : 0.18);
+      if (heavy) this.effects.light(hx, hy, color, 30, 0.18);
       let stop = Math.min(COMBAT.hitstopMax, Math.round(COMBAT.hitstopBase + dmg.damage * COMBAT.hitstopPerDamage));
+      // Smash attacks freeze longer the more they were charged; super-effective hits longer still.
+      if (smash) stop = Math.min(COMBAT.hitstopMax + 4, stop + 3 + Math.round(((a.chargeMult || 1) - 1) * 10));
       if (superEff) stop = Math.min(COMBAT.hitstopMax + 6, stop + 6);
       this.hitstop = Math.max(this.hitstop, stop);
-      this.shake(0.08 + res.launch * 0.018 + (superEff ? 0.25 : 0));
+      this.shake(0.08 + res.launch * 0.018 + (superEff ? 0.25 : 0) + (smash ? 0.15 : 0));
+      if (heavy) this.cam.punch = Math.max(this.cam.punch || 0, smash ? 0.07 : 0.04);
       if (!this.demo && this.state === 'playing' && res.launch > 8 && this.predictKO(d)) this.finishHit(d, hx, hy);
       this.audio.hit(hx, dmg.damage, move.type);
       if (heavy) this.audio.launch(hx, res.launch);
@@ -1460,7 +1520,7 @@ export class Game {
   fighterView(f) {
     const inMove = f.state === 'attack' && f.move;
     return {
-      state: f.state, sf: f.sf, grounded: f.grounded, vx: f.vel.x, vy: f.vel.y, facing: f.facing,
+      state: f.state === 'trumped' ? 'air' : f.state, sf: f.sf, grounded: f.grounded, vx: f.vel.x, vy: f.vel.y, facing: f.facing,
       runSpeed: f.st.runSpeed,
       anim: inMove ? f.move.anim : null,
       hits: inMove ? hitWindows(f.move) : null,
@@ -1473,12 +1533,14 @@ export class Game {
       dash: f.state === 'ground' && f.dashF > 0,
       skid: f.state === 'ground' && f.skidF > 0,
       charging: f.charging, tumble: f.tumble, dodge: f.dodge && f.dodge.kind, intangible: f.intangible,
-      shieldFrac: Math.max(0, f.shieldHP / SHIELD.hp), flash: f.flash, invuln: f.invuln > 0 || f.onRevival,
+      shieldFrac: Math.max(0, f.shieldHP / SHIELD.hp), shieldStun: f.state === 'shield' && f.shieldStun > 0, flash: f.flash, invuln: f.invuln > 0 || f.onRevival,
       landSquash: f.landSquash, zipDir: f.zip ? { x: f.zip.vx, y: f.zip.vy } : null,
       boosted: Object.values(f.boosts).some((v) => v > 0), seeded: !!f.seed, bond: f.destinyBond > 0,
       flip: f.flipF > 0 && f.state === 'air' ? 1 - f.flipF / 20 : -1,
       victory: (this.state === 'results' || (this.state === 'gameover' && this.gameoverTimer < 1.2)) && this.winner === f.slot,
-      showTag: !this.demo,
+      taunt: f.state === 'taunt' ? f.taunt : null,
+      faint: !!f.faintPose,
+      showTag: !this.demo && !f.faintPose,
     };
   }
 
@@ -1529,6 +1591,7 @@ export class Game {
         drone.userData.ringMat.color.set(f.colors.main);
       }
     });
+    this.updateFaintPose(dt);
     for (const pr of this.projectiles) {
       const [x, y] = lerpPos(pr.px, pr.py, pr.x, pr.y);
       pr.mesh.position.set(x, y, 0);
@@ -1546,6 +1609,24 @@ export class Game {
     if (!this.demo && this.fighters.length) this.ui.updateHUD(this.players, this.settings, this.timeLeft, this.teamMode);
   }
 
+  // Results: the beaten Pokémon lies fainted just behind the winner's victory pose.
+  updateFaintPose(dt) {
+    const champ = this.state === 'results' && this.winner !== null && this.winner !== undefined ? this.fighters[this.winner] : null;
+    for (const f of this.fighters) if (f && f !== champ && f.faintPose && !champ) f.faintPose = false;
+    if (!champ || !champ.active) return;
+    const loser = this.fighters.find((f) => f && f !== champ);
+    if (!loser || loser.active) return;
+    const S = STAGE.main;
+    const x = clamp(champ.pos.x - 1.7, S.left + 0.8, S.right - 0.8);
+    loser.faintPose = true;
+    loser.facing = Math.sign(champ.pos.x - x) || 1;
+    loser.vel.x = loser.vel.y = 0;
+    const m = loser.model;
+    m.root.visible = true;
+    m.root.position.set(x, champ.grounded ? champ.pos.y : S.top, -1.1);
+    m.update(this.fighterView(loser), dt);
+  }
+
   // Fighters off the edge of the screen (but not KO'd) show as a bubble at the edge.
   updateBubbles() {
     const list = [];
@@ -1558,6 +1639,33 @@ export class Game {
       list.push({ slot: i, x: v.x, y: v.y, dist, label: f.sp.name[0], pct: Math.floor(f.percent), color: f.colors.css });
     });
     this.ui.updateBubbles(list);
+  }
+
+  // The clear part of the screen in NDC (-1..1), between the HUD cards and the touch buttons.
+  // Measured from the DOM twice a second.
+  safeFrame() {
+    if (this._safe && this.realTime - this._safeT < 0.5) return this._safe;
+    this._safeT = this.realTime;
+    const W = window.innerWidth || 1;
+    const H = window.innerHeight || 1;
+    let top = 0; let bottom = H; let right = W;
+    const hud = this.state === 'title' ? null : document.querySelector('.hud-cards');
+    if (hud && hud.offsetParent !== null) {
+      const r = hud.getBoundingClientRect();
+      if (r.height > 0 && r.height < H * 0.4) {
+        if (r.top > H / 2) bottom = r.top;
+        else top = r.bottom;
+      }
+    }
+    const tb = document.querySelector('.touch-controls:not(.hidden) .t-buttons');
+    if (tb) {
+      const r = tb.getBoundingClientRect();
+      if (r.width > 0) right = Math.max(W * 0.6, r.left);
+    }
+    top = Math.min(top, H * 0.3);
+    bottom = Math.max(bottom, H * 0.7);
+    this._safe = { x0: -1, x1: (right / W) * 2 - 1, y0: 1 - (bottom / H) * 2, y1: 1 - (top / H) * 2 };
+    return this._safe;
   }
 
   updateCamera(dt) {
@@ -1588,11 +1696,18 @@ export class Game {
       const maxY = Math.max(...ys);
       tx = clamp(((minX + maxX) / 2) * 0.85, -10, 10);
       ty = clamp(((minY + maxY) / 2) * 0.8 + 0.4, 0.2, 9);
-      // Pokémon are small, so frame them tightly (Smash-style zoom).
+      // Pokémon are small, so frame them tightly (Smash-style zoom), inside the part of the
+      // screen the HUD and touch buttons leave clear.
       const w = maxX - minX + 6.5;
       const h = maxY - minY + 4.5;
-      const halfH = Math.max(h / 2, w / 2 / this.camera.aspect, 3.6);
-      td = clamp(halfH / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)), 11, 46);
+      const sf = this.safeFrame();
+      const sw = (sf.x1 - sf.x0) / 2;
+      const sh = (sf.y1 - sf.y0) / 2;
+      const tanH = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+      const halfH = Math.max(h / 2 / sh, w / 2 / this.camera.aspect / sw, 3.6);
+      td = clamp(halfH / tanH, 12, 46);
+      tx -= ((sf.x0 + sf.x1) / 2) * td * tanH * this.camera.aspect;
+      ty -= ((sf.y0 + sf.y1) / 2) * td * tanH;
       const champ = this.state === 'results' && this.winner !== null && this.winner !== undefined ? this.fighters[this.winner] : null;
       if (champ && champ.active) {
         // Results: frame the winner's victory pose beside the results panel.
@@ -1615,12 +1730,14 @@ export class Game {
     c.y += (ty - c.y) * k;
     c.dist += (td - c.dist) * k;
     c.trauma = Math.max(0, c.trauma - dt * 1.8);
+    // Heavy hits punch the camera in a touch, easing back out.
+    c.punch = Math.max(0, (c.punch || 0) - dt * 0.35);
     const s = c.trauma * c.trauma;
     const t = this.realTime * 40;
     const ox = s * 0.9 * Math.sin(t * 1.1) * Math.cos(t * 0.37);
     const oy = s * 0.9 * Math.sin(t * 0.9 + 2) * Math.cos(t * 0.53);
     const lift = this.state === 'select' ? 0.6 : 1.4;
-    this.camera.position.set(c.x + ox, c.y + lift + oy, c.dist);
+    this.camera.position.set(c.x + ox, c.y + lift + oy, c.dist * (1 - c.punch));
     this.camera.lookAt(c.x + ox * 0.5, c.y + (this.state === 'select' ? 0.2 : 0.3), 0);
   }
 }

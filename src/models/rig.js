@@ -308,14 +308,27 @@ export function buildRig(model, id, colors, makeMat) {
   // Attack clip for a move: physical clips for normals, special ones for specials; the second
   // variant (if the species has one) for smashes, aerials and up/down specials, for variety.
   const attackClip = (v) => {
+    // Stat-boosting moves (Swords Dance, Nasty Plot…) roar or glare instead of striking.
+    if (v.anim === 'setup') return has('angry') ? 'angry' : 'roar';
     if (v.special) return (v.slot === 'up' || v.slot === 'down') && has('attack_special2') ? 'attack_special2' : 'attack_special';
     const alt = v.anim && /smash|air/.test(v.anim);
     return alt && has('attack_physical2') ? 'attack_physical2' : 'attack_physical';
   };
-  const selectClip = (v) => {
+  let idleFor = 0;
+  const selectClip = (v, dt = 0) => {
     const run = Math.abs(v.vx) / (v.runSpeed || 8);
     if (model.appearT < 1) return play(has('roar') ? 'roar' : 'idle', { loop: false, fade: 0.05 });
+    if (v.faint) return play(has('faint') ? 'faint' : 'hurt', { loop: false, fade: 0.2 });
     if (v.victory) return play(has('happy') ? 'happy' : 'roar', { loop: true, fade: 0.25 });
+    if (v.taunt) {
+      const name = has(v.taunt) ? v.taunt : has('happy') ? 'happy' : 'roar';
+      const a = play(name, { loop: false, fade: 0.12 });
+      // Fit the clip to the taunt's length.
+      if (a) a.timeScale = Math.max(0.8, a.getClip().duration / 1.25);
+      return a;
+    }
+    const idle = v.state === 'ground' && !v.dash && run <= 0.08;
+    idleFor = idle ? idleFor + dt : 0;
     switch (v.state) {
       case 'attack': {
         const name = attackClip(v);
@@ -338,6 +351,12 @@ export function buildRig(model, id, colors, makeMat) {
       case 'ground':
         if (v.dash || run > 0.72) return play('run', { timeScale: Math.max(0.75, Math.min(1.5, run * 1.05)), fade: 0.12 });
         if (run > 0.08 && !v.skid) return play('walk', { timeScale: Math.max(0.6, Math.min(1.6, run / 0.45)), fade: 0.15 });
+        // Standing still a while: an idle fidget now and then (the alternate wait clip).
+        if (idleFor > 5 && has('idle_alt')) {
+          const a = play('idle_alt', { loop: false, fade: 0.3 });
+          if (a && a.time >= a.getClip().duration - 0.05) idleFor = -Math.random() * 4;
+          return a;
+        }
         return play('idle', { fade: 0.2 });
       default: return play('idle', { fade: 0.15 }); // air, shield, ledge, dodge, holding...
     }
@@ -377,7 +396,7 @@ export function buildRig(model, id, colors, makeMat) {
     // excite: the body's forward/vertical acceleration and turn rate, which set the springs going.
     retarget(dt = 1 / 60, excite = null, view = null) {
       if (mixer && view) {
-        selectClip(view);
+        selectClip(view, dt);
         mixer.update(dt);
         model.body.getWorldQuaternion(qb);
         qbInv.copy(qb).invert();

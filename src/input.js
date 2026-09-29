@@ -2,7 +2,7 @@
 // state shape, so fighters and the CPU brain don't care where input comes from.
 
 export const BUTTONS = [
-  'jump', 'attack', 'special', 'shield', 'grab', 'smash', 'swap',
+  'jump', 'attack', 'special', 'shield', 'grab', 'smash', 'swap', 'taunt',
   'start', 'confirm', 'back', 'down',
 ];
 
@@ -11,12 +11,12 @@ const KEYMAPS = {
   kb1: {
     left: ['KeyA'], right: ['KeyD'], up: ['KeyW'], down: ['KeyS'],
     jump: ['Space'], attack: ['KeyF'], special: ['KeyG'], shield: ['KeyH'], grab: ['KeyR'],
-    swap: ['KeyT'], start: ['Escape'], confirm: ['KeyF', 'Space'], back: ['KeyG'],
+    swap: ['KeyT'], taunt: ['KeyE'], start: ['Escape'], confirm: ['KeyF', 'Space'], back: ['KeyG'],
   },
   kb2: {
     left: ['ArrowLeft'], right: ['ArrowRight'], up: ['ArrowUp'], down: ['ArrowDown'],
     jump: ['Quote', 'Numpad0'], attack: ['Slash', 'Numpad1'], special: ['Period', 'Numpad2'],
-    shield: ['Comma', 'Numpad3'], grab: ['Semicolon', 'Numpad4'], swap: ['KeyL', 'Numpad5'],
+    shield: ['Comma', 'Numpad3'], grab: ['Semicolon', 'Numpad4'], swap: ['KeyL', 'Numpad5'], taunt: ['KeyK', 'Numpad6'],
     start: ['Enter'], confirm: ['Enter', 'Slash'], back: ['Backspace', 'Period'],
   },
 };
@@ -105,10 +105,14 @@ export class InputManager {
       let mx = pad.axes[0] || 0;
       let my = -(pad.axes[1] || 0);
       if (Math.hypot(mx, my) < DEADZONE) { mx = 0; my = 0; }
-      if (btn(14)) mx = -1;
-      if (btn(15)) mx = 1;
-      if (btn(12)) my = 1;
-      if (btn(13)) my = -1;
+      // D-pad: menus in menus; in battle it taunts, like Smash (up/side/down pick the taunt).
+      const dpad = btn(12) || btn(13) || btn(14) || btn(15);
+      if (!this.battle) {
+        if (btn(14)) mx = -1;
+        if (btn(15)) mx = 1;
+        if (btn(12)) my = 1;
+        if (btn(13)) my = -1;
+      }
       // Right stick = smash attacks (like Smash's C-stick).
       const cx = pad.axes[2] || 0;
       const cy = -(pad.axes[3] || 0);
@@ -121,7 +125,9 @@ export class InputManager {
           attack: btn(0), special: btn(1), jump: btn(2), swap: btn(3) || btn(8), grab: btn(4),
           shield: btn(5) || btn(6) || btn(7), smash: cmag > 0.7,
           start: btn(9), confirm: btn(0), back: btn(1), down: my < -0.6,
+          taunt: this.battle && dpad,
         },
+        tauntDir: btn(12) ? 'up' : btn(13) ? 'down' : dpad ? 'side' : null,
       };
       this.apply(dev, raw, dt);
     }
@@ -140,6 +146,7 @@ export class InputManager {
       dev.held[b] = h;
       if (dev.pressed[b]) this.anyInput = true;
     }
+    if (raw.tauntDir !== undefined) dev.tauntDir = raw.tauntDir;
     dev.moveX = raw.moveX;
     dev.moveY = raw.moveY;
     if (raw.held.smash) {

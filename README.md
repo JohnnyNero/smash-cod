@@ -33,7 +33,7 @@ working branch also deploys to GitHub Pages.
 
 | Action | Gamepad | Keyboard P1 | Keyboard P2 | Touch |
 |---|---|---|---|---|
-| Move | L-stick / D-pad | WASD | Arrows | left thumb |
+| Move | L-stick (D-pad in menus) | WASD | Arrows | left thumb |
 | Jump (tap for short hop) | X | Space | ' | JUMP |
 | Attack (+ direction = tilts / aerials) | A | F | / | ATTACK |
 | Smash attack (hold to charge) | R-stick, or tap direction + A | tap direction + F | tap direction + / | flick + ATTACK |
@@ -41,6 +41,7 @@ working branch also deploys to GitHub Pages.
 | Shield (+ flick = roll / spot dodge; air = air dodge) | RB / LT / RT | H | , | SHIELD |
 | Grab (then direction = throw, attack = pummel) | LB, or shield + A | R | ; | GRAB |
 | Switch Pokémon (team mode; + ◀ ▲ ▶ picks who) | Y | T | L | SWAP |
+| Taunt (up roar · side glare · down cheer) | D-pad | E (+ direction) | K (+ direction) | — |
 | Hidden picks at team preview / after a KO | ◀ ▲ ▶ (▼ / A = stay in) | A / W / D | arrows | tap |
 | Drop through platform / fast fall | flick down | S | ↓ | flick down |
 | Pause | Start | Esc | Enter | II |

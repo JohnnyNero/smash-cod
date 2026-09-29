@@ -43,7 +43,7 @@ function strikeCurve(p, A, B) {
 
 // How much of the procedural joint pose rides on top of the real animation clips, by state.
 function clipLayer(v) {
-  if (v.victory) return 0;
+  if (v.victory || v.taunt || v.faint) return 0;
   switch (v.state) {
     case 'ground': return v.skid ? 0.6 : v.dash ? 0.2 : 0;
     case 'attack': return 0.45;
@@ -130,6 +130,38 @@ export function glowMat(color, opacity = 1) {
   });
 }
 
+// Energy bubble (shield, aura): a fresnel rim that glows at the edges and stays clear in the
+// middle, with slow scrolling bands, tinted by player colour and reddening as `frac` drops.
+export function bubbleMat(color, hurt = 0xff3a2a) {
+  return new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
+    uniforms: {
+      color: { value: new THREE.Color(color) }, hurt: { value: new THREE.Color(hurt) },
+      frac: { value: 1 }, time: { value: 0 }, pulse: { value: 0 }, opacity: { value: 1 },
+    },
+    vertexShader: `
+      varying vec3 vN; varying vec3 vV; varying float vY;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vN = normalize(normalMatrix * normal);
+        vV = -mv.xyz;
+        vY = position.y;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform vec3 color, hurt; uniform float frac, time, pulse, opacity;
+      varying vec3 vN; varying vec3 vV; varying float vY;
+      void main() {
+        float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));
+        float rim = pow(f, 2.4);
+        vec3 c = mix(hurt, color, smoothstep(0.15, 0.75, frac));
+        float bands = 0.5 + 0.5 * sin(vY * 22.0 - time * 5.0);
+        float a = (0.08 + rim * 1.25 + bands * 0.06 * (1.0 - rim)) * opacity * (1.0 + pulse * 1.4);
+        gl_FragColor = vec4(c * (0.8 + rim * 0.9 + pulse * 0.8), clamp(a, 0.0, 1.0));
+      }`,
+  });
+}
+
 export class CreatureModel {
   constructor({ species, colors, label }) {
     this.species = species;
@@ -175,14 +207,15 @@ export class CreatureModel {
     for (const name of JOINTS) this.cur[name] = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };
 
     const r = Math.max(this.h, species.size.w) * 0.62;
-    this.shieldMat = glowMat(colors.main, 0.35);
-    this.shield = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 2), this.shieldMat);
+    this.shieldMat = bubbleMat(colors.main);
+    this.shield = new THREE.Mesh(new THREE.SphereGeometry(r, 32, 20), this.shieldMat);
+    this.shield.renderOrder = 4;
     this.shield.position.y = this.h * 0.5;
     this.shield.visible = false;
     this.root.add(this.shield);
 
-    this.auraMat = glowMat(colors.accent, 0.35);
-    this.aura = new THREE.Mesh(new THREE.IcosahedronGeometry(r * 0.85, 1), this.auraMat);
+    this.auraMat = bubbleMat(colors.accent, colors.accent);
+    this.aura = new THREE.Mesh(new THREE.SphereGeometry(r * 0.85, 24, 16), this.auraMat);
     this.aura.visible = false;
     this.pivot.add(this.aura);
 
@@ -931,7 +964,7 @@ export class CreatureModel {
     }
 
     // ---- victory pose on the results screen
-    if (v.victory) {
+    if (v.victory || v.taunt) {
       const hop = Math.abs(Math.sin(t * 5));
       bodyY = hop * 0.35;
       stretch = (hop - 0.5) * 0.12;
@@ -1091,17 +1124,30 @@ export class CreatureModel {
     this.facer.rotation.y = this.yaw;
     if (v.shake) this.root.position.x += (Math.random() - 0.5) * 0.12 * v.shake;
 
-    this.auraMat.color.set(auraColor ?? this.colors.accent);
     // Real models glow with the aura colour instead of sitting inside a bubble.
     this.aura.visible = aura > 0.02 && !this.parts.rig;
     this.auraGlow = aura;
     this.auraGlowColor = auraColor ?? SPECIES_AURA[this.species.model] ?? this.colors.accent;
-    this.auraMat.opacity = 0.22 * aura * (0.85 + Math.random() * 0.3); // a glow, not a bubble that hides the model
+    if (this.aura.visible) {
+      const u = this.auraMat.uniforms;
+      if (auraColor !== null && auraColor !== undefined) u.color.value.set(auraColor);
+      else u.color.value.set(this.colors.accent);
+      u.hurt.value.copy(u.color.value);
+      u.time.value = t;
+      u.opacity.value = 0.55 * aura * (0.85 + Math.random() * 0.3); // a glow, not a bubble that hides the model
+    }
     this.shield.visible = v.state === 'shield';
     if (this.shield.visible) {
-      const sc = 0.45 + 0.55 * v.shieldFrac;
+      // Shrinks and reddens as it weakens; flares when it takes a hit; shimmers when nearly broken.
+      const frac = v.shieldFrac;
+      this.shieldPulse = v.shieldStun ? 1 : Math.max(0, (this.shieldPulse || 0) - dt * 6);
+      const sc = (0.45 + 0.55 * frac) * (1 + this.shieldPulse * 0.06);
       this.shield.scale.setScalar(sc);
-      this.shieldMat.opacity = 0.22 + (1 - v.shieldFrac) * 0.25 + Math.sin(t * 12) * 0.03;
+      const u = this.shieldMat.uniforms;
+      u.frac.value = frac;
+      u.time.value = t;
+      u.pulse.value = this.shieldPulse;
+      u.opacity.value = (0.75 + (1 - frac) * 0.25) * (frac < 0.3 ? 0.75 + 0.25 * Math.sin(t * 30) : 1);
     }
 
     if (this.parts.update) this.parts.update(v, t, dt, this.springs);
@@ -1124,10 +1170,12 @@ export class CreatureModel {
       this.recallT = Math.min(1, this.recallT + dt / 0.3);
       grow = 1 - this.recallT;
     }
-    this.root.scale.setScalar(Math.max(0.01, grow));
+    this.root.scale.setScalar(Math.max(0.01, grow) * (this.previewScale || 1));
 
     let flash = v.flash;
     let flashColor = null;
+    // Frozen in hitlag: flicker white-hot, like Smash's hit flash.
+    if (v.shake) flash = Math.max(flash * 0.6, Math.floor(t * 30) % 2 ? 0.7 : 0.3);
     if (v.state === 'dodge' && v.intangible) { flash = 0.45; flashColor = 0x9fd8ff; }
     else if (v.invuln) flash = Math.max(flash, 0.25 + 0.2 * Math.sin(t * 25));
     else if (v.state === 'helpless') { flash = 0.25; flashColor = 0x000000; }

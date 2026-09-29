@@ -21,6 +21,7 @@ const snap = (f) => ({
 function stuckFor(F) {
   if (F.state === 'landlag') return Math.max(0, F.landLagF - F.sf);
   if (F.state === 'shieldbreak') return 60;
+  if (F.state === 'taunt') return Math.max(0, 75 - F.sf);
   if (F.state === 'attack' && F.move) {
     const hbs = F.move.hitboxes || [];
     const last = hbs.length ? Math.max(...hbs.map((h) => h.f[1])) : F.move.total * 0.5;
@@ -248,6 +249,12 @@ export class CpuBrain {
       // Near the edge in the air, drift back in rather than chasing aerials off stage.
       if (!me.grounded && me.pos.y < 3 && Math.abs(me.pos.x) > S.right - 2 && Math.sign(me.pos.x) === Math.sign(mx)) mx = -Math.sign(me.pos.x);
     }
+    // The foe just got KO'd: now and then, rub it in.
+    if (foe && (foe.dead || foe.onRevival) && me.state === 'ground' && !this.taunted && Math.random() < 0.015) {
+      this.taunted = true;
+      if (Math.random() < 0.5) tap('taunt');
+    }
+    if (foe && foe.active && !foe.dead && !foe.onRevival) this.taunted = false;
     if (me.grounded) this.giveUp = Math.random() > c.recover;
 
     const s = this.state;

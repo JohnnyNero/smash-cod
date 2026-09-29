@@ -7,7 +7,9 @@ export const PHYS = {
   gravity: 40, // a little floatier than Smash Ultimate, per the design doc
   hitstunGravity: 0.45, // launched fighters travel far, like Smash
   kbDecay: 10, // how fast horizontal speed above normal air speed bleeds off
-  fastFallMult: 1.6,
+  fastFallMult: 1.75,
+  fastFallBuffer: 6, // frames a down-flick before the peak is remembered
+  coyoteFrames: 5, // frames after walking off an edge that a jump still counts as a ground jump
   groundAccel: 60,
   groundFriction: 40,
   airAccel: 26,
@@ -48,6 +50,7 @@ export const COMBAT = {
   techLockout: 30, // ...but a press within this many frames of the previous one doesn't count
   staleFactors: [0.08, 0.076, 0.068, 0.06, 0.053, 0.045, 0.038, 0.03, 0.022], // Ultimate's queue
   freshBonus: 1.05,
+  clankRange: 9, // grounded attacks whose hitboxes meet clank if their damage is within this (Smash: 9%)
 };
 
 export const SHIELD = {
@@ -72,6 +75,9 @@ export const LEDGE = {
   reachUp: 0.5,
   reachDown: 1.0,
   invulnFrames: 30,
+  // Ultimate-style: each regrab without touching the ground gives less intangibility.
+  regrabInvuln: [30, 22, 15, 9, 4, 0],
+  trumpFrames: 24, // popped off the ledge by someone taking it: no actions for this long
   actionableAfter: 8,
   maxHangFrames: 300,
   regrabCooldown: 30,
@@ -84,7 +90,7 @@ export const STAGE = {
     { x: 4.6, y: 3.1, w: 4.2 },
     { x: 0, y: 6.2, w: 4.2 },
   ],
-  blast: { left: -19.5, right: 19.5, top: 17.5, bottom: -11 },
+  blast: { left: -21.5, right: 21.5, top: 19, bottom: -12 }, // widened: fewer early KOs
   spawns: [-4.5, 4.5],
   revivalY: 9.5,
 };

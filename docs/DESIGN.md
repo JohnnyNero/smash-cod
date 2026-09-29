@@ -254,6 +254,36 @@ fighters lose part of their inward speed each frame (`pushResist` 0.35 on the gr
 air), a soft wall: walking or dashing into someone stops at their body and nudges them along
 instead of running through, while rolls still cross through and aerial cross-ups stay possible.
 
+## Polish pass 3: impact, taunts, ledges, framing
+
+- **Hit feel:** every hit spawns a star burst at the contact point (`Effects.impact`), speed-line
+  streaks along the actual launch direction (`Effects.streaks`, stretched particles in the glow
+  instancer) and a smaller spark spray; heavy hits add a coloured star and a flash light. Smash
+  attacks freeze 3+ frames longer (more when charged) and shake harder; heavy hits punch the
+  camera in slightly (`cam.punch`). The victim flickers white while frozen in hitlag.
+- **Animation clips:** taunts (D-pad in battle, E / K on keyboards) play the Pokémon's own
+  roar (up), angry (side) and happy (down) clips for 75 committal frames (the CPU sometimes
+  taunts after a KO, and punishes yours). Stat-boost specials (`anim: 'setup'`) use the angry /
+  roar clip. Standing still for a few seconds plays the alternate idle now and then. On the
+  results screen the beaten Pokémon lies in its faint clip behind the winner.
+- **Shield / aura bubbles:** a fresnel shader (`bubbleMat`): clear in the middle, glowing at
+  the rim with slow bands, in the player's colour, reddening as the shield weakens, flaring on
+  each block and flickering when nearly broken.
+- **Ledges:** each regrab without touching the ground gives less intangibility
+  (`LEDGE.regrabInvuln` 30/22/15/9/4/0). Grabbing an occupied ledge trumps the hanger off
+  (`ledgeTrumped`, 24 frames of no actions, Ultimate-style).
+- **Clanks:** grounded normals whose active hitboxes meet cancel out if their damage is within
+  9% (both rebound into `10 + 0.6 x damage` frames of lag); otherwise only the weaker rebounds.
+  Aerials and specials don't clank.
+- **Movement:** 5 frames of coyote time (a jump just after walking off an edge is still the
+  ground jump), fast-fall input buffered 6 frames before the peak, fast fall 1.75x. Blast zones
+  widened to ±21.5 / 19 / -12 (average KO in CPU runs ~133%).
+- **Framing:** select-screen previews are scaled into their own boxes (no more overlapping
+  Charizards). The battle camera frames the fighters inside the part of the screen the HUD and
+  touch buttons leave clear (`Game.safeFrame`, measured from the DOM), so on phones the action
+  sits left of the buttons. The stadium's near stands were cut back so they don't crowd the
+  sides of the shot.
+
 ## Finishing blow & off-screen bubbles
 
 - `Game.predictKO` replays the launch physics (hitstun gravity, knockback decay, landing on the
@@ -377,6 +407,7 @@ bench, Journey mode (evolution), more Pokémon and stages, music, online play.
 | Shield / dodge / air dodge | RB / LT / RT | H | , | SHIELD |
 | Grab | LB, or Shield + Attack | R | ; | GRAB |
 | Switch Pokémon (+ ◀ ▲ ▶ to choose) | Y | T | L | SWAP |
+| Taunt (up / side / down) | D-pad | E + dir | K + dir | — |
 | Hidden picks (preview / KO) | stick ◀ ▲ ▶, ▼ / A = stay | A ◀ W ▲ D ▶ | arrows | tap |
 
 Exact bindings live in `src/input.js` and the README.

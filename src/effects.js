@@ -48,6 +48,7 @@ export class Effects {
     }
     this.starGeo = new THREE.ShapeGeometry(star);
     this.glints = [];
+    this.impacts = [];
     this.beams = [];
     this.beamGeo = new THREE.CylinderGeometry(1, 1, 1, 16, 1, true);
     this.beamGeo.translate(0, 0.5, 0);
@@ -219,6 +220,28 @@ export class Effects {
     }
   }
 
+  // Speed-line sparks thrown along the launch direction (stretched along their velocity).
+  streaks(x, y, ang, color, count = 8, speed = 16, spread = 0.35) {
+    for (let i = 0; i < count; i++) {
+      const a = ang + (Math.random() - 0.5) * spread * 2;
+      const s = speed * (0.5 + Math.random() * 0.7);
+      this.add(2, x, y, (Math.random() - 0.5) * 0.3, Math.cos(a) * s, Math.sin(a) * s, 0,
+        0.12 + Math.random() * 0.12, 0.05 + Math.random() * 0.04, color, { drag: 7 });
+    }
+  }
+
+  // A flat star burst at the point of contact that pops out and fades in a few frames.
+  impact(x, y, color = 0xffffff, size = 1, life = 0.13) {
+    const m = new THREE.Mesh(this.starGeo, additive(color, 1));
+    m.position.set(x, y, 0.7);
+    m.rotation.z = Math.random() * Math.PI;
+    m.userData = { life, max: life, size };
+    m.renderOrder = 6;
+    m.scale.setScalar(0.01);
+    this.scene.add(m);
+    this.impacts.push(m);
+  }
+
   glint(x, y, color = 0xffffff) {
     const m = new THREE.Mesh(this.starGeo, additive(color, 1));
     m.position.set(x, y, 0.6);
@@ -358,8 +381,14 @@ export class Effects {
       tmp.position.set(p.x, p.y, p.z);
       tmp.rotation.set(p.rx, p.ry, 0);
       tmp.scale.setScalar(size);
+      if (p.kind === 2) {
+        // Streak: a thin bar along its velocity, shrinking as it slows.
+        const sp = Math.hypot(p.vx, p.vy);
+        tmp.rotation.set(0, 0, Math.atan2(p.vy, p.vx));
+        tmp.scale.set(p.size * (1 + sp * 0.35) * f, p.size * 0.45 * f, p.size * 0.45 * f);
+      }
       tmp.updateMatrix();
-      if (p.kind === 0 && gi < MAX_GLOW) {
+      if ((p.kind === 0 || p.kind === 2) && gi < MAX_GLOW) {
         this.glow.setMatrixAt(gi, tmp.matrix);
         this.glow.setColorAt(gi, tmpColor.copy(p.color).multiplyScalar(0.4 + f));
         gi++;
@@ -403,6 +432,10 @@ export class Effects {
     fade(this.glints, (o, k) => {
       o.scale.setScalar(Math.sin(Math.min(1, k * 2.5) * Math.PI / 2) * (1.2 - k));
       o.rotation.z = k * 1.2;
+      o.material.opacity = 1 - k * k;
+    });
+    fade(this.impacts, (o, k) => {
+      o.scale.setScalar(o.userData.size * (0.5 + 1.1 * Math.sqrt(Math.min(1, k * 2.2))) * (1 - k * 0.3));
       o.material.opacity = 1 - k * k;
     });
     fade(this.swooshes, (o, k) => {
@@ -449,7 +482,7 @@ export class Effects {
     for (const b of this.balls) this.scene.remove(b.g);
     this.balls.length = 0;
     for (const tr of Object.values(this.trails || {})) { tr.pts = []; tr.mesh.visible = false; }
-    for (const arr of [this.rings, this.beams, this.callouts, this.swooshes, this.glints]) {
+    for (const arr of [this.rings, this.beams, this.callouts, this.swooshes, this.glints, this.impacts]) {
       for (const o of arr) {
         this.scene.remove(o);
         o.material.dispose();

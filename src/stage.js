@@ -228,7 +228,7 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
   const cz = -8;
   const tiers = 7;
   const seats = [];
-  for (let a = Math.PI * 1.08; a <= Math.PI * 1.92; a += 0.045) {
+  for (let a = Math.PI * 1.15; a <= Math.PI * 1.85; a += 0.045) { // (the near ends are cut so they don't crowd the frame)
     for (let k = 0; k < tiers; k++) {
       const r = R + k * 2.6;
       const y = -26 + k * 2.4; // the bowl sits below the field so sky stays behind the fighters
@@ -276,7 +276,7 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
   // Floodlight towers along the rim
   const towerMat = std(0x33363e, { m: 0.5 });
   const lampMat = new THREE.MeshBasicMaterial({ color: 0xfff4d8, toneMapped: false });
-  for (const a of [Math.PI * 1.12, Math.PI * 1.35, Math.PI * 1.65, Math.PI * 1.88]) {
+  for (const a of [Math.PI * 1.17, Math.PI * 1.38, Math.PI * 1.62, Math.PI * 1.83]) {
     const r = R + tiers * 2.6 + 2;
     const x = cx + Math.cos(a) * r;
     const z = cz + Math.sin(a) * r;
@@ -298,7 +298,7 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
   const redBanner = new THREE.MeshStandardMaterial({ map: bannerTexture('#c8382f'), side: THREE.DoubleSide, roughness: 0.9 });
   const blueBanner = new THREE.MeshStandardMaterial({ map: bannerTexture('#2a62c8'), side: THREE.DoubleSide, roughness: 0.9 });
   for (let i = 0; i < 8; i++) {
-    const a = Math.PI * (1.18 + i * 0.09);
+    const a = Math.PI * (1.2 + i * 0.086);
     const x = cx + Math.cos(a) * (R - 1.6);
     const z = cz + Math.sin(a) * (R - 1.6);
     const b = mesh(new THREE.PlaneGeometry(3.6, 7, 1, 4), i < 4 ? redBanner : blueBanner, x, -20, z, false);
