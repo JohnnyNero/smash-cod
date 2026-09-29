@@ -83,3 +83,7 @@ cel-shaded with outlines; add `?style=lowpoly` for the original faceted look.
 | `src/audio.js` | Synthesized sounds |
 | `src/ui.js`, `src/style.css` | Menus and HUD |
 | `src/stage.js`, `src/effects.js` | Plateau Stadium visuals and crowd; particles, KO blasts, callouts |
+
+## Animation lab
+
+Open the game with `?lab` (e.g. https://johnnynero.github.io/smash-cod/?lab) to preview any Pokémon's moves and movement frame by frame, slowed down, with hitboxes drawn. Moves marked ★ use a signature animation.

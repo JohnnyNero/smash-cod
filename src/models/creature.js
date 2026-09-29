@@ -9,6 +9,7 @@
 import * as THREE from 'three';
 import { BUILDERS } from './species.js';
 import { hasRig, buildRig } from './rig.js';
+import { choreoFor, evalChoreo, phaseU } from './choreo.js';
 import { INK_LAYER, inkTargets } from '../ink.js';
 
 const damp = (a, b, rate, dt) => a + (b - a) * (1 - Math.exp(-rate * dt));
@@ -39,6 +40,9 @@ function strikeCurve(p, A, B) {
   const f = p >= A ? Math.sin(clamp01((p - A) / Math.max(0.05, 1 - A)) * Math.PI) : 0;
   return { a, s, f, s0 };
 }
+
+// Each Pokémon's aura glows in its own colour on attacks.
+const SPECIES_AURA = { pikachu: 0xffe040, charizard: 0xff7a30, blastoise: 0x5ab0ff, venusaur: 0x7acc4a, gengar: 0xb07aff, lucario: 0x4a8aff };
 
 const JOINTS = ['hips', 'torso', 'head', 'armL', 'armR', 'legL', 'legR', 'tail', 'earL', 'earR', 'kneeL', 'kneeR', 'elbowL', 'elbowR', 'jaw'];
 
@@ -533,7 +537,23 @@ export class CreatureModel {
       const f = v.charging ? 0 : k.f;
       if (v.charging) bodyY = Math.sin(t * 55) * 0.012;
       const sweep = (x0, x1) => x0 + (x1 - x0) * easeOutCubic(ramp(p, k.s0, B)); // spins and flips
-      switch (v.anim) {
+      // Signature choreography for this species, if it has one for this move.
+      const ch = choreoFor(this.species.model, v.anim);
+      this.choreoJaw = false;
+      if (ch) {
+        const P = evalChoreo(ch, v.charging ? 0.3 : phaseU(p, A, B));
+        for (const [n, val] of Object.entries(P)) {
+          if (Array.isArray(val) && o[n]) { o[n].x = val[0]; o[n].y = val[1]; o[n].z = val[2]; }
+        }
+        lunge = P.lunge || 0;
+        bodyY += P.bodyY || 0;
+        if (P.rotX) rotX = P.rotX;
+        if (P.rotY) rotY = P.rotY;
+        if (P.curl !== undefined) curl = P.curl;
+        stretch = P.stretch || 0;
+        aura = P.aura || 0;
+        this.choreoJaw = !!P.jaw;
+      } else switch (v.anim) {
         case 'jab':
           o.armR.x = 0.6 * a - 1.9 * s;
           o.armL.x = -0.5 * a + 0.5 * s;
@@ -896,7 +916,7 @@ export class CreatureModel {
     }
 
     // ---- jaw (rigged models): open on strikes, roars, hits and cheers
-    if (v.state === 'attack' && v.anim) {
+    if (v.state === 'attack' && v.anim && !this.choreoJaw) {
       const hits = v.hits || [[0.3, 0.5]];
       const k = strikeCurve(p, hits[0][0], hits[0][1]);
       o.jaw.x = v.anim === 'breath' ? 0.55 * Math.max(k.s, 0.3 * k.a) : 0.3 * k.s + 0.1 * k.a;
@@ -1001,8 +1021,11 @@ export class CreatureModel {
     if (v.shake) this.root.position.x += (Math.random() - 0.5) * 0.12 * v.shake;
 
     this.auraMat.color.set(auraColor ?? this.colors.accent);
-    this.aura.visible = aura > 0.02;
-    this.auraMat.opacity = 0.45 * aura * (0.8 + Math.random() * 0.4);
+    // Real models glow with the aura colour instead of sitting inside a bubble.
+    this.aura.visible = aura > 0.02 && !this.parts.rig;
+    this.auraGlow = aura;
+    this.auraGlowColor = auraColor ?? SPECIES_AURA[this.species.model] ?? this.colors.accent;
+    this.auraMat.opacity = 0.22 * aura * (0.85 + Math.random() * 0.3); // a glow, not a bubble that hides the model
     this.shield.visible = v.state === 'shield';
     if (this.shield.visible) {
       const sc = 0.45 + 0.55 * v.shieldFrac;
@@ -1043,6 +1066,10 @@ export class CreatureModel {
     else if (v.boosted) { flash = 0.12 + 0.08 * Math.sin(t * 5); flashColor = 0xff5a3a; }
     if (this.appearT < 1) { flash = 1 - this.appearT; flashColor = null; }
     if (this.recallT < 1) { flash = 0.4 + this.recallT * 0.6; flashColor = 0xff3030; }
+    else if (this.parts.rig && this.auraGlow > 0.05 && flash < 0.16 * this.auraGlow) {
+      flash = 0.16 * this.auraGlow * (0.85 + Math.random() * 0.3);
+      flashColor = this.auraGlowColor;
+    }
     this.setFlash(Math.min(1, flash), flashColor);
     this.tag.visible = v.showTag;
   }

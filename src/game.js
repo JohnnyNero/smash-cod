@@ -859,6 +859,9 @@ export class Game {
         else this.simulate(dt);
         break;
       }
+      case 'lab':
+        if (this.lab) this.lab.update(dt);
+        break;
       default:
         break;
     }
@@ -1540,6 +1543,12 @@ export class Game {
 
   updateCamera(dt) {
     const c = this.cam;
+    if (this.labCam) {
+      const L = this.labCam;
+      this.camera.position.set(L.x, L.y, L.dist);
+      this.camera.lookAt(L.x, L.ty, 0);
+      return;
+    }
     let tx;
     let ty;
     let td;

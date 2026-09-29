@@ -26,4 +26,8 @@ function loop(now) {
 }
 requestAnimationFrame(loop);
 
+if (new URLSearchParams(location.search).has('lab')) {
+  import('./lab.js').then(({ startLab }) => startLab(game));
+}
+
 window.smashOps = game; // handy for poking at things from the console

@@ -204,6 +204,21 @@ target) now always runs: RenderPass -> bloom (high quality only) -> ink -> Outpu
 - KO% table and scripts: `ko.mjs` style sims (attacker Lucario, centre stage): forward smash KOs
   Pikachu ~80%, Blastoise ~115% (145% with good DI).
 
+## Signature attacks & the animation lab
+
+- `src/models/choreo.js`: keyframed signature attacks per species, built from their bodies:
+  Pikachu headbutts and tail-whips, Charizard claws, tail-whips and bites, Blastoise punches,
+  body-slams and shell-spins, Venusaur bites and stomps, Gengar swipes and grin-lunges, Lucario
+  punches, roundhouses and palm-strikes, plus head tosses for up tilts. Keys live in phase space
+  (0-0.4 startup, 0.4 first active frame, 0.4-0.6 active, 0.6-1 end lag) so they line up with the
+  real frame data; each key eases in with snap / smooth / back / linear. Smash charging holds the
+  wind-up. Moves without one fall back to the generic procedural animation.
+- Attack auras on the real models are a glow in the species' own colour (not a bubble).
+- **Animation lab (`?lab`):** one Pokémon big on screen; pick species and any move or movement
+  loop; play / pause / step frames / scrub / 1x-0.1x; live hitboxes (red, blue for grabs); frame
+  number, phase (startup / ACTIVE / end lag), phase-space u, and whether the move is SIGNATURE or
+  GENERIC; side / three-quarter view and facing flip. Keys: space, arrows.
+
 ## Audio, secondary motion and CPU pass
 
 - **Cries:** Showdown's MP3 cries for the six species are vendored in `public/audio/cries/`
