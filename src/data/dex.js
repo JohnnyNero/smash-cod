@@ -15,7 +15,11 @@ export const DEX = {
     "spe": 90
    },
    "weightkg": 6,
-   "num": 25
+   "num": 25,
+   "abilities": [
+    "Static",
+    "Lightning Rod"
+   ]
   },
   "charizard": {
    "name": "Charizard",
@@ -32,7 +36,11 @@ export const DEX = {
     "spe": 100
    },
    "weightkg": 90.5,
-   "num": 6
+   "num": 6,
+   "abilities": [
+    "Blaze",
+    "Solar Power"
+   ]
   },
   "blastoise": {
    "name": "Blastoise",
@@ -48,7 +56,11 @@ export const DEX = {
     "spe": 78
    },
    "weightkg": 85.5,
-   "num": 9
+   "num": 9,
+   "abilities": [
+    "Torrent",
+    "Rain Dish"
+   ]
   },
   "venusaur": {
    "name": "Venusaur",
@@ -65,7 +77,11 @@ export const DEX = {
     "spe": 80
    },
    "weightkg": 100,
-   "num": 3
+   "num": 3,
+   "abilities": [
+    "Overgrow",
+    "Chlorophyll"
+   ]
   },
   "gengar": {
    "name": "Gengar",
@@ -82,7 +98,10 @@ export const DEX = {
     "spe": 110
    },
    "weightkg": 40.5,
-   "num": 94
+   "num": 94,
+   "abilities": [
+    "Cursed Body"
+   ]
   },
   "lucario": {
    "name": "Lucario",
@@ -99,7 +118,12 @@ export const DEX = {
     "spe": 90
    },
    "weightkg": 54,
-   "num": 448
+   "num": 448,
+   "abilities": [
+    "Steadfast",
+    "Inner Focus",
+    "Justified"
+   ]
   }
  },
  "moves": {
@@ -112,7 +136,13 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
-   "desc": "10% chance to paralyze the target."
+   "desc": "10% chance to paralyze the target.",
+   "secondary": [
+    {
+     "chance": 10,
+     "status": "par"
+    }
+   ]
   },
   "voltswitch": {
    "name": "Volt Switch",
@@ -145,7 +175,15 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": true,
-   "desc": "30% chance to lower the target's Defense by 1."
+   "desc": "30% chance to lower the target's Defense by 1.",
+   "secondary": [
+    {
+     "chance": 30,
+     "boosts": {
+      "def": -1
+     }
+    }
+   ]
   },
   "flamethrower": {
    "name": "Flamethrower",
@@ -156,7 +194,13 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
-   "desc": "10% chance to burn the target."
+   "desc": "10% chance to burn the target.",
+   "secondary": [
+    {
+     "chance": 10,
+     "status": "brn"
+    }
+   ]
   },
   "flareblitz": {
    "name": "Flare Blitz",
@@ -167,7 +211,13 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": true,
-   "desc": "Has 33% recoil. 10% chance to burn. Thaws user."
+   "desc": "Has 33% recoil. 10% chance to burn. Thaws user.",
+   "secondary": [
+    {
+     "chance": 10,
+     "status": "brn"
+    }
+   ]
   },
   "fly": {
    "name": "Fly",
@@ -211,7 +261,13 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
-   "desc": "10% chance to freeze the target."
+   "desc": "10% chance to freeze the target.",
+   "secondary": [
+    {
+     "chance": 10,
+     "status": "frz"
+    }
+   ]
   },
   "rapidspin": {
    "name": "Rapid Spin",
@@ -222,7 +278,15 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": true,
-   "desc": "Free user from hazards/bind/Leech Seed; +1 Spe."
+   "desc": "Free user from hazards/bind/Leech Seed; +1 Spe.",
+   "secondary": [
+    {
+     "chance": 100,
+     "selfBoosts": {
+      "spe": 1
+     }
+    }
+   ]
   },
   "shellsmash": {
    "name": "Shell Smash",
@@ -244,7 +308,13 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
-   "desc": "30% chance to poison the target."
+   "desc": "30% chance to poison the target.",
+   "secondary": [
+    {
+     "chance": 30,
+     "status": "psn"
+    }
+   ]
   },
   "gigadrain": {
    "name": "Giga Drain",
@@ -266,7 +336,8 @@ export const DEX = {
    "priority": 0,
    "powder": true,
    "contact": false,
-   "desc": "Causes the target to fall asleep."
+   "desc": "Causes the target to fall asleep.",
+   "status": "slp"
   },
   "leechseed": {
    "name": "Leech Seed",
@@ -277,7 +348,8 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
-   "desc": "1/8 of target's HP is restored to user every turn."
+   "desc": "1/8 of target's HP is restored to user every turn.",
+   "volatile": "leechseed"
   },
   "shadowball": {
    "name": "Shadow Ball",
@@ -288,7 +360,15 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
-   "desc": "20% chance to lower the target's Sp. Def by 1."
+   "desc": "20% chance to lower the target's Sp. Def by 1.",
+   "secondary": [
+    {
+     "chance": 20,
+     "boosts": {
+      "spd": -1
+     }
+    }
+   ]
   },
   "hypnosis": {
    "name": "Hypnosis",
@@ -299,7 +379,8 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
-   "desc": "Causes the target to fall asleep."
+   "desc": "Causes the target to fall asleep.",
+   "status": "slp"
   },
   "sludgewave": {
    "name": "Sludge Wave",
@@ -310,7 +391,13 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
-   "desc": "10% chance to poison adjacent Pokemon."
+   "desc": "10% chance to poison adjacent Pokemon.",
+   "secondary": [
+    {
+     "chance": 10,
+     "status": "psn"
+    }
+   ]
   },
   "destinybond": {
    "name": "Destiny Bond",
@@ -321,7 +408,8 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
-   "desc": "If an opponent knocks out the user, it also faints."
+   "desc": "If an opponent knocks out the user, it also faints.",
+   "volatile": "destinybond"
   },
   "aurasphere": {
    "name": "Aura Sphere",

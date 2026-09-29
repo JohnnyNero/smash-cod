@@ -16,6 +16,7 @@ import { CreatureModel, glowMat, STYLE } from './models/creature.js';
 import { InkPass } from './ink.js';
 import { buildStage } from './stage.js';
 import { Effects } from './effects.js';
+import { STATUS } from './status.js';
 import { CpuBrain } from './ai.js';
 import { UI } from './ui.js';
 import { TouchControls, isTouchDevice } from './touch.js';
@@ -512,6 +513,7 @@ export class Game {
 
   clearMatch() {
     this.fz = null;
+    this.ui.clearLog();
     this.timeScale = 1;
     if (this.ui.updateBubbles) this.ui.updateBubbles([]);
     for (const p of this.players) {
@@ -1225,6 +1227,7 @@ export class Game {
           this.effects.callout(hx, hy + 0.8, 'NOT VERY EFFECTIVE…', 0x9aa3b5);
         }
       }
+      this.rollSecondary(a, d, move, hb);
       if (move.drain) {
         const heal = dmg.damage * move.drain;
         a.percent = Math.max(0, a.percent - heal);
@@ -1314,6 +1317,88 @@ export class Game {
     } else if (type === 'Ghost' || type === 'Poison') {
       for (let i = 0; i < 6; i++) fx.add(1, c.x + (Math.random() - 0.5) * d.w, c.y, 0, (Math.random() - 0.5), 1 + Math.random(), 0, 0.7, 0.18, type === 'Ghost' ? 0x6a4a9a : 0x9a4ab0, { drag: 2, grow: 0.8 });
     }
+  }
+
+  // Showdown secondary effects (Thunderbolt's 10% paralysis, Shadow Ball's 20% SpD drop...),
+  // rolled once per use of a move per target, not once per hitbox, so multi-hit streams like
+  // Flamethrower don't get a dozen chances.
+  rollSecondary(a, d, move, hb) {
+    const secs = move.secondary;
+    if (!secs || !d.active || d.dead) return;
+    const serial = hb.serial ?? a.moveSerial;
+    const key = `${a.slot}:${serial}`;
+    d.secRolled ||= new Set();
+    if (d.secRolled.has(key)) return;
+    d.secRolled.add(key);
+    if (d.secRolled.size > 64) d.secRolled = new Set([key]);
+    for (const sec of secs) {
+      const guaranteed = move.special && a.called && a.called === move.slot; // a called move's effect always lands
+      if (!guaranteed && Math.random() * 100 >= (sec.chance ?? 100)) continue;
+      if (sec.status) d.inflict(sec.status, a);
+      if (sec.volatile === 'confusion') d.inflict('confusion', a);
+      if (sec.boosts) d.applyBoosts(sec.boosts);
+      if (sec.selfBoosts) a.applyBoosts(sec.selfBoosts);
+    }
+  }
+
+  // Ongoing status visuals: confusion stars circling the head, paralysis sparks, poison bubbles.
+  statusFx(f, dt) {
+    if (dt <= 0) return;
+    const hx = f.pos.x;
+    const hy = f.pos.y + f.h * 1.02;
+    if (f.confusion > 0 && Math.random() < 0.35) {
+      const a = this.realTime * 5 + Math.random() * 0.3;
+      this.effects.add(0, hx + Math.cos(a) * f.w * 0.45, hy, Math.sin(a) * 0.4, -Math.sin(a) * 2.2, 0, Math.cos(a) * 1.2,
+        0.25, 0.06, Math.random() < 0.5 ? 0xfff27a : 0xffffff);
+    }
+    const st = f.status && f.status.id;
+    if (st === 'par' && Math.random() < 0.08) this.effects.sparks(hx + (Math.random() - 0.5) * f.w, f.pos.y + Math.random() * f.h, 0, 0, 0xfff27a, 3, 4);
+    if ((st === 'psn' || st === 'tox') && Math.random() < 0.06) {
+      this.effects.add(1, hx + (Math.random() - 0.5) * f.w, f.pos.y + f.h * 0.6, 0.2, 0, 0.8, 0, 0.6, 0.08, 0xb050d0, { drag: 1, grow: 0.6 });
+    }
+    if (st === 'brn' && Math.random() < 0.1) {
+      this.effects.add(0, hx + (Math.random() - 0.5) * f.w, f.pos.y + Math.random() * f.h * 0.8, 0.2, 0, 1.5, 0, 0.4, 0.05, 0xff8a30, { grav: -2, drag: 1 });
+    }
+  }
+
+  // Status callouts in Showdown's words ("Pikachu is paralyzed! It may be unable to move!").
+  onStatus(f, id) {
+    const name = f.sp.name;
+    const c = f.center;
+    const col = id === 'confusion' ? 0xd8a0ff : parseInt(STATUS[id].color.slice(1), 16);
+    if (!this.demo) {
+      this.effects.callout(f.pos.x, f.pos.y + f.h + 0.7, id === 'confusion' ? 'CONFUSED!' : `${STATUS[id].name}!`, col);
+      this.ui.log(id === 'confusion' ? `${name} became confused!` : `${name} ${STATUS[id].text}`);
+    }
+    this.effects.ring(c.x, c.y, col, 1.8, 0.35);
+    this.audio.status(f.pos.x, id);
+  }
+
+  onStatusTick(f, id, dmg) {
+    const c = f.center;
+    const col = id === 'brn' ? 0xff7a30 : 0xb050d0;
+    for (let i = 0; i < 5; i++) {
+      this.effects.add(id === 'brn' ? 0 : 1, c.x + (Math.random() - 0.5) * f.w, c.y + (Math.random() - 0.3) * f.h * 0.5, 0.2,
+        (Math.random() - 0.5), 1.5 + Math.random() * 1.5, 0, 0.5, id === 'brn' ? 0.08 : 0.12, col, { grav: -1, drag: 1.5, grow: id === 'brn' ? 0 : 0.5 });
+    }
+    f.flash = Math.max(f.flash, 0.35);
+  }
+
+  onFullPara(f) {
+    const c = f.center;
+    this.effects.sparks(c.x, c.y, 0, 0, 0xfff27a, 14, 6);
+    if (!this.demo) {
+      this.effects.callout(f.pos.x, f.pos.y + f.h + 0.7, "CAN'T MOVE!", 0xf8d030);
+      this.ui.log(`${f.sp.name} is paralyzed! It can't move!`);
+    }
+    this.audio.buzz(f.pos.x, 0.35);
+  }
+
+  onThaw(f) {
+    const c = f.center;
+    this.effects.streaks(c.x, c.y, Math.PI / 2, 0xd8f6ff, 12, 9, Math.PI);
+    this.audio.freeze(f.pos.x);
+    if (!this.demo) this.ui.log(`${f.sp.name} thawed out!`);
   }
 
   // Charging a smash: sparks gather into the fighter, a rising hum, and a flash at full charge.
@@ -1433,7 +1518,7 @@ export class Game {
     this.scene.add(mesh);
     this.projectiles.push({
       owner, move, p, x, y, vx: Math.cos(a) * p.speed * dir, vy: Math.sin(a) * p.speed,
-      life: p.life, mesh, shell, core, dirSign: dir, passed: new Set(),
+      life: p.life, mesh, shell, core, dirSign: dir, passed: new Set(), serial: owner.moveSerial,
     });
   }
 
@@ -1464,7 +1549,7 @@ export class Game {
         for (const d of this.fighters) {
           if (d === pr.owner || !d.active || d.onRevival || d.intangible || pr.passed.has(d)) continue;
           if (!circleBox(pr.x, pr.y, p.r, d.pos.x - d.w / 2, d.pos.y, d.pos.x + d.w / 2, d.pos.y + d.h)) continue;
-          const hb = { kb: p.kb, grow: p.grow, ang: p.kbAng ?? 40, effect: p.effect };
+          const hb = { kb: p.kb, grow: p.grow, ang: p.kbAng ?? 40, effect: p.effect, speed: p.speed, serial: pr.serial };
           const res = this.applyHit(pr.owner, d, hb, pr.move, p.dmg, Math.sign(pr.vx) || pr.dirSign, pr.x, pr.y);
           if (res.result === 'immune' || res.result === 'miss') {
             pr.passed.add(d); // immune targets let it fly straight through
@@ -1626,6 +1711,7 @@ export class Game {
       flip: f.flipF > 0 && f.state === 'air' ? 1 - f.flipF / 20 : -1,
       victory: (this.state === 'results' || (this.state === 'gameover' && this.gameoverTimer < 1.2)) && this.winner === f.slot,
       taunt: f.state === 'taunt' ? f.taunt : null,
+      status: f.status ? f.status.id : null, confused: f.confusion > 0,
       airJump: !f.grounded && f.airJumps < f.st.airJumps,
       faint: !!f.faintPose,
       showTag: !this.demo && !f.faintPose && this.state !== 'results',
@@ -1671,6 +1757,7 @@ export class Game {
           m.footstep = false;
           this.effects.puff(x - f.facing * 0.1, y, -f.facing, 1);
         }
+        this.statusFx(f, dt);
         if (f.state === 'sleep' && dt > 0 && Math.random() < 0.06) {
           this.effects.add(0, f.pos.x + f.facing * 0.3, f.pos.y + f.h * 0.5, 0, 0.4, 1.2, 0, 1.2, 0.12, 0xd8d0ff, { drag: 0.5 });
         }

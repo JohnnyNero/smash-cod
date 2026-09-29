@@ -9,6 +9,7 @@ import { PHYS, COMBAT, SHIELD, DODGE, LEDGE, STAGE, INPUT } from './config.js';
 import { THROWS, PUMMEL } from './data/moves.js';
 import { buildMoveset } from './data/moveset.js';
 import { fighterStats } from './data/pokemon.js';
+import { STATUS, CONFUSION_FRAMES, PAR_SPEED, PAR_CHECK, PAR_CHANCE, PAR_STUN, statusImmune, freezeFrames } from './status.js';
 
 const DT = 1 / 60;
 const FIGHTER_TAUNT_FRAMES = 75;
@@ -55,6 +56,7 @@ export class Fighter {
       buf: {}, bufFlick: null, bufStick: null, forceShortHop: false, softLand: false,
       dashF: 0, dashDir: 1, skidF: 0,
       boosts: {}, sleepFrames: 0, seed: null, destinyBond: 0,
+      status: null, confusion: 0, frozenF: 0,
     });
     this.st = fighterStats(this.sp);
     this.pp = {};
@@ -128,6 +130,7 @@ export class Fighter {
     if (this.state !== 'shield') this.shieldHP = Math.min(SHIELD.hp, this.shieldHP + SHIELD.regen);
     if (this.destinyBond > 0) this.destinyBond--;
     if (this.seed) this.tickSeed();
+    if (this.status || this.confusion) this.tickStatus();
     this.readInput(inp);
 
     if (this.onRevival) {
@@ -204,6 +207,13 @@ export class Fighter {
         this.airDrift(0.3);
         if (this.sf >= LEDGE.trumpFrames) this.setState(this.grounded ? 'ground' : 'air');
         break;
+      case 'frozen':
+        this.runFrozen();
+        break;
+      case 'paralyzed':
+        this.vel.x = approach(this.vel.x, 0, PHYS.groundFriction * DT);
+        if (this.sf >= PAR_STUN) this.toNeutral();
+        break;
       case 'taunt':
         this.vel.x = approach(this.vel.x, 0, PHYS.groundFriction * DT);
         if (this.sf >= FIGHTER_TAUNT_FRAMES || !this.grounded) this.toNeutral();
@@ -226,6 +236,8 @@ export class Fighter {
   // ------------------------------------------------------------------ input
 
   readInput(inp) {
+    // Confused: left and right are swapped.
+    if (this.confusion > 0) inp = { ...inp, moveX: -inp.moveX, smashX: -(inp.smashX || 0) };
     this.inp = inp;
     const x = Math.abs(inp.moveX) > 0.25 ? inp.moveX : 0;
     const y = Math.abs(inp.moveY) > 0.25 ? inp.moveY : 0;
@@ -1210,9 +1222,12 @@ export class Fighter {
     Object.assign(this, {
       move: null, zip: null, dodge: null, ledge: null, heldBy: null, charging: false,
       hitstun: 0, tumble: false, seed: null, destinyBond: 0, pivotPending: false, sleepFrames: 0,
-      boosts: {}, shieldStun: 0, flash: 0, invuln: 0,
+      boosts: {}, shieldStun: 0, flash: 0, invuln: 0, confusion: 0,
     });
-    this.st = fighterStats(this.sp);
+    // Showdown: a major status stays through switching (its timer pauses on the bench);
+    // confusion is cured, and switching out thaws a frozen Pokémon.
+    if (this.status && this.status.id === 'frz') this.status = null;
+    this.refreshStats();
     this.state = 'ground';
     this.benched = true;
   }
@@ -1242,8 +1257,97 @@ export class Fighter {
       this.boosts[k] = clamp((this.boosts[k] || 0) + v, -6, 6);
       parts.push(`${v > 0 ? '+' : ''}${v} ${k.toUpperCase()}`);
     }
-    this.st = fighterStats(this.sp, this.boosts);
+    this.refreshStats();
     this.game.onBoost(this, parts.join(' '));
+  }
+
+  // Stats from species + stat stages, slowed while paralyzed.
+  refreshStats() {
+    this.st = fighterStats(this.sp, this.boosts);
+    if (this.status && this.status.id === 'par') {
+      this.st.runSpeed *= PAR_SPEED;
+      this.st.airSpeed *= PAR_SPEED;
+    }
+  }
+
+  // Inflict a Showdown status: 'brn' | 'par' | 'psn' | 'tox' | 'frz' | 'confusion'.
+  // One major status at a time, with Showdown's type immunities. Returns true if it took hold.
+  inflict(id, by = null) {
+    if (this.dead || this.onRevival || this.eliminated) return false;
+    if (id === 'confusion') {
+      if (this.confusion > 0) return false;
+      this.confusion = CONFUSION_FRAMES;
+      this.game.onStatus(this, id);
+      return true;
+    }
+    const def = STATUS[id];
+    if (!def || this.status || this.state === 'sleep' || statusImmune(id, this.sp.types)) return false;
+    if (id === 'frz') {
+      if (['held', 'ledge'].includes(this.state)) return false;
+      this.interrupt();
+      this.status = { id, by };
+      this.frozenF = freezeFrames(this.percent);
+      this.setState('frozen');
+    } else {
+      this.status = { id, by, frames: def.frames, t: 0, n: 0 };
+      if (id === 'par') this.refreshStats();
+    }
+    this.game.onStatus(this, id);
+    return true;
+  }
+
+  // Cancel whatever we were doing (moves, grabs, dodges), e.g. when frozen or fully paralyzed.
+  interrupt() {
+    if (this.holding) this.releaseGrab(false);
+    this.move = null;
+    this.zip = null;
+    this.dodge = null;
+    this.charging = false;
+  }
+
+  cureStatus(msg) {
+    const id = this.status && this.status.id;
+    this.status = null;
+    if (id === 'par') this.refreshStats();
+    if (msg) this.game.popup(this.slot, msg);
+  }
+
+  tickStatus() {
+    if (this.confusion > 0 && --this.confusion === 0) this.game.popup(this.slot, 'SNAPPED OUT OF CONFUSION');
+    const s = this.status;
+    if (!s || s.id === 'frz') return;
+    const def = STATUS[s.id];
+    s.t++;
+    if (def.tick && s.t % def.tick === 0) {
+      s.n++;
+      const dmg = s.id === 'tox' ? def.dmg * s.n : def.dmg;
+      this.percent = Math.min(999, this.percent + dmg);
+      this.stats.damageTaken += dmg;
+      if (s.by && s.by !== this) s.by.stats.damageDealt += dmg;
+      this.game.onStatusTick(this, s.id, dmg);
+    }
+    if (s.id === 'par' && s.t % PAR_CHECK === 0 && Math.random() < PAR_CHANCE
+      && ['ground', 'air', 'attack', 'shield', 'jumpsquat', 'landlag'].includes(this.state)) {
+      // Fully paralyzed: can't move for a moment.
+      this.interrupt();
+      this.setState('paralyzed');
+      this.game.onFullPara(this);
+    }
+    if (--s.frames <= 0) this.cureStatus(`${def.name} WORE OFF`);
+  }
+
+  runFrozen() {
+    this.vel.x *= 0.92;
+    this.frozenF--;
+    const raw = this.rawPressed || {};
+    if (raw.attack || raw.special || raw.jump || raw.shield || this.flickT === 0) this.frozenF -= 4; // mash out
+    if (this.frozenF <= 0) this.thaw();
+  }
+
+  thaw() {
+    this.cureStatus();
+    this.game.onThaw(this);
+    if (this.state === 'frozen') this.toNeutral();
   }
 
   // Multi-hit bookkeeping: a hitbox can hit a target once per `group`, or every `rehit` frames.
@@ -1261,7 +1365,7 @@ export class Fighter {
   applyStatus(effect, by) {
     if (this.dead || this.intangible) return false;
     if (effect === 'sleep') {
-      if (this.state === 'sleep' || this.state === 'held' || this.state === 'ledge') return false;
+      if (this.status || this.state === 'sleep' || this.state === 'held' || this.state === 'ledge') return false;
       if (this.holding) this.releaseGrab(false);
       this.move = null;
       this.zip = null;
@@ -1357,6 +1461,7 @@ export class Fighter {
       if (this.shieldHP <= 0) this.breakShield();
       return { result: 'blocked', launch: 0 };
     }
+    if (this.state === 'frozen') this.thaw(); // any hit shatters the ice
     if (this.holding) this.releaseGrab(false);
     if (this.state === 'held' && !hit.throw && this.heldBy) this.heldBy.releaseGrab(false);
 

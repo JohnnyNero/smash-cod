@@ -12,7 +12,7 @@ const learnsets = {};
 for (const id of Object.keys(ROSTER)) {
   const s = Dex.species.get(id);
   if (!s.exists) throw new Error(`Unknown species ${id}`);
-  species[id] = { name: s.name, types: s.types, baseStats: s.baseStats, weightkg: s.weightkg, num: s.num };
+  species[id] = { name: s.name, types: s.types, baseStats: s.baseStats, weightkg: s.weightkg, num: s.num, abilities: Object.values(s.abilities) };
   // Which of our implemented moves this species can legally learn (for the team builder).
   const ls = await Dex.learnsets.get(id);
   const legal = new Set(Object.keys(ls.learnset || {}));
@@ -37,6 +37,19 @@ for (const id of Object.keys(SPECIALS)) {
     priority: m.priority, powder: !!m.flags.powder, contact: !!m.flags.contact,
     desc: m.shortDesc,
   };
+  // Secondary effects (Showdown's `secondary`/`secondaries`): chance, status, volatile status,
+  // stat changes on the target or the user.
+  const secs = m.secondaries || (m.secondary ? [m.secondary] : []);
+  const sec = secs.map((x) => ({
+    chance: x.chance ?? 100,
+    ...(x.status ? { status: x.status } : {}),
+    ...(x.volatileStatus ? { volatile: x.volatileStatus } : {}),
+    ...(x.boosts ? { boosts: x.boosts } : {}),
+    ...(x.self && x.self.boosts ? { selfBoosts: x.self.boosts } : {}),
+  })).filter((x) => x.status || x.volatile || x.boosts || x.selfBoosts);
+  if (sec.length) moves[id].secondary = sec;
+  if (m.status) moves[id].status = m.status; // status moves: the condition they inflict
+  if (m.volatileStatus) moves[id].volatile = m.volatileStatus;
 }
 
 // typechart[attacking][defending] = Showdown multiplier (2, 1, 0.5 or 0)
@@ -55,4 +68,4 @@ export const DEX = ${JSON.stringify({ species, moves, typechart, learnsets }, nu
 `;
 writeFileSync(new URL('../src/data/dex.js', import.meta.url), out);
 console.log(`dex.js: ${Object.keys(species).length} species, ${Object.keys(moves).length} moves, ${types.length} types`);
-console.log(learnsets);
+

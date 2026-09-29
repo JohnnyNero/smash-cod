@@ -5,6 +5,7 @@
 import { COMBAT } from './config.js';
 import { DEX } from './data/dex.js';
 import { stageMult } from './data/pokemon.js';
+import { BRN_PHYSICAL } from './status.js';
 
 // Showdown multiplier (4, 2, 1, 0.5, 0.25 or 0) for a move type against a defender's types.
 export function typeEffectiveness(type, defTypes) {
@@ -40,6 +41,8 @@ export function damageFor(attacker, defender, base, move) {
   const type = move && move.type;
   const stab = type && attacker.sp.types.includes(type) ? COMBAT.stab : 1;
   const eff = type ? typeEffectiveness(type, defender.sp.types) : 1;
+  // Burned attackers hit weaker with physical moves (Showdown halves Attack; softened).
+  const burn = !special && attacker.status && attacker.status.id === 'brn' ? BRN_PHYSICAL : 1;
   const aura = attacker.sp.aura ? 1 + Math.min(0.25, attacker.percent / 480) : 1; // Lucario: up to +25% at 120%
-  return { damage: base * statMult * stab * effMultiplier(eff) * aura, eff, stab: stab > 1 };
+  return { damage: base * statMult * stab * effMultiplier(eff) * aura * burn, eff, stab: stab > 1 };
 }

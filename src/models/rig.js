@@ -360,6 +360,9 @@ export function buildRig(model, id, colors, makeMat) {
       if (a) a.timeScale = Math.max(0.8, a.getClip().duration / 1.25);
       return a;
     }
+    // Frozen solid: the pose stops dead. Fully paralyzed: a stuttering flinch.
+    if (v.state === 'frozen') { if (cur) cur.timeScale = 0; return cur; }
+    if (v.state === 'paralyzed') return play('hurt', { loop: true, fade: 0.04, timeScale: Math.random() < 0.5 ? 0 : 1.5 });
     const idle = v.state === 'ground' && !v.dash && run <= 0.08;
     idleFor = idle ? idleFor + dt : 0;
     if (hover) {

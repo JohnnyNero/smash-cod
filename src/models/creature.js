@@ -43,7 +43,8 @@ function strikeCurve(p, A, B) {
 
 // How much of the procedural joint pose rides on top of the real animation clips, by state.
 function clipLayer(v) {
-  if (v.victory || v.taunt || v.faint) return 0;
+  if (v.victory || v.taunt || v.faint || v.state === 'frozen') return 0;
+  if (v.state === 'paralyzed') return 0.3;
   if (v.flyJump && v.vy > -2) return 0.15;
   switch (v.state) {
     case 'ground': return v.skid ? 0.6 : v.dash ? 0.2 : 0;
@@ -1195,6 +1196,15 @@ export class CreatureModel {
     else if (v.bond) { flash = 0.25 + 0.15 * Math.sin(t * 8); flashColor = 0x8a3aff; }
     else if (v.seeded && Math.sin(t * 6) > 0.3) { flash = 0.25; flashColor = 0x6adc3a; }
     else if (v.boosted) { flash = 0.12 + 0.08 * Math.sin(t * 5); flashColor = 0xff5a3a; }
+    // Status tints (after hit flashes so a hit still reads): frozen solid, crackling paralysis,
+    // a slow burn / poison pulse.
+    if (typeColor === null && !v.shake) {
+      if (v.state === 'frozen') { flash = 0.62; typeColor = 0xbfeeff; }
+      else if (v.state === 'paralyzed') { flash = Math.floor(t * 20) % 2 ? 0.6 : 0.1; typeColor = 0xffe840; }
+      else if (v.status === 'par' && Math.sin(t * 9) > 0.93) { flash = 0.45; typeColor = 0xffe840; }
+      else if (v.status === 'brn' && flash < 0.2) { flash = 0.12 + 0.1 * Math.max(0, Math.sin(t * 4)); typeColor = 0xff5a20; }
+      else if ((v.status === 'psn' || v.status === 'tox') && flash < 0.2) { flash = 0.1 + 0.1 * Math.max(0, Math.sin(t * 3)); typeColor = 0xa040c0; }
+    }
     if (typeColor !== null) {
       flashColor = typeColor;
       if (v.hitType === 'Electric') flash = Math.floor(t * 24) % 2 ? 0.7 : 0.12;

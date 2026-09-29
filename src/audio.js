@@ -291,6 +291,11 @@ export class Audio {
   status(x, kind) {
     if (kind === 'sleep') this.tone(700, 0.6, { type: 'sine', freqEnd: 300, gain: 0.15, x });
     else if (kind === 'seed') this.tone(300, 0.2, { type: 'triangle', freqEnd: 600, gain: 0.12, x });
+    else if (kind === 'brn') { this.noise(0.5, { type: 'bandpass', freq: 700, freqEnd: 1600, q: 0.8, gain: 0.3, x }); this.tone(180, 0.3, { type: 'sawtooth', freqEnd: 90, gain: 0.06, x }); }
+    else if (kind === 'par') this.buzz(x, 0.3);
+    else if (kind === 'psn' || kind === 'tox') { for (let i = 0; i < 3; i++) this.tone(220 + i * 60, 0.12, { type: 'sine', freqEnd: 120, gain: 0.1, delay: i * 0.07, x }); }
+    else if (kind === 'frz') { this.freeze(x); this.tone(1800, 0.4, { type: 'triangle', freqEnd: 1200, gain: 0.06, x }); }
+    else if (kind === 'confusion') { for (let i = 0; i < 4; i++) this.tone(i % 2 ? 900 : 600, 0.08, { type: 'square', gain: 0.05, delay: i * 0.09, x }); }
     else this.noise(0.5, { type: 'highpass', freq: 3000, gain: 0.12, x });
   }
 

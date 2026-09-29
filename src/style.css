@@ -192,6 +192,28 @@ b { color: var(--gold); }
 .status .slp { background: #8a7ad0; }
 .status .seed { background: #5a9a3a; }
 .status .bond { background: #6a3aa0; }
+/* Showdown's status colours */
+.status .st-brn { background: #ee5533; }
+.status .st-par { background: #f8d030; color: #222; }
+.status .st-psn, .status .st-tox { background: #a040a0; }
+.status .st-frz { background: #98d8d8; color: #123; }
+.status .cnf { background: #c070d0; }
+
+/* Showdown-style battle log */
+.battle-log {
+  position: absolute; left: calc(12px + var(--safe-l)); top: calc(12px + env(safe-area-inset-top, 0px));
+  display: flex; flex-direction: column; gap: 3px; max-width: min(440px, 44vw); pointer-events: none;
+}
+.log-line {
+  background: rgba(10, 13, 24, 0.72); color: #f2f2f2; font-size: 13px; padding: 3px 10px;
+  border-left: 3px solid var(--gold); animation: slidein 0.2s ease-out; transition: opacity 0.6s;
+}
+.log-line.turn { border-left-color: #fff; font-weight: 700; letter-spacing: 0.12em; }
+.log-line.fade { opacity: 0; }
+@media (pointer: coarse) {
+  .battle-log { top: auto; bottom: calc(46px + var(--safe-b)); left: 50%; transform: translateX(-50%); align-items: center; max-width: 60vw; }
+  .log-line { font-size: 11px; }
+}
 .types { display: flex; gap: 3px; margin: 2px 0; }
 .type {
   display: inline-block; padding: 1px 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.08em;

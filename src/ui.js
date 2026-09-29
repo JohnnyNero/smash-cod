@@ -5,6 +5,7 @@ import { TYPE_COLORS } from './config.js';
 import { moveInfo } from './data/moveset.js';
 import { moveEffect, typeEffectiveness } from './damage.js';
 import { SPECIES } from './data/pokemon.js';
+import { STATUS } from './status.js';
 
 const el = (tag, cls, html = '') => {
   const e = document.createElement(tag);
@@ -63,6 +64,8 @@ export class UI {
     }
     this.announcer = el('div', 'announcer');
     this.killfeed = el('div', 'killfeed');
+    this.battleLog = el('div', 'battle-log');
+    root.append(this.battleLog);
     this.rotate = el('div', 'rotate-hint', '<div>↻</div><p>Rotate your phone to landscape</p>');
     root.append(this.announcer, this.killfeed, this.rotate);
 
@@ -247,6 +250,8 @@ export class UI {
       const tags = Object.entries(f.boosts).filter(([, v]) => v)
         .map(([k, v]) => `<span class="${v > 0 ? 'up' : 'down'}">${v > 0 ? '+' : ''}${v} ${k.toUpperCase()}</span>`);
       if (f.state === 'sleep') tags.push('<span class="slp">SLP</span>');
+      if (f.status) tags.push(`<span class="st-${f.status.id}">${STATUS[f.status.id].name}</span>`);
+      if (f.confusion > 0) tags.push('<span class="cnf">CONFUSED</span>');
       if (f.seed) tags.push('<span class="seed">SEEDED</span>');
       if (f.destinyBond > 0) tags.push('<span class="bond">BOND</span>');
       set('status', tags.join(''), (v) => { c.status.innerHTML = v; });
@@ -377,6 +382,17 @@ export class UI {
     clearTimeout(this.annTimer);
     this.annTimer = setTimeout(() => a.remove(), ms);
   }
+
+  // Showdown-style battle log: the latest few lines, fading out.
+  log(text, cls = '') {
+    const item = el('div', `log-line ${cls}`, text);
+    this.battleLog.append(item);
+    while (this.battleLog.children.length > 4) this.battleLog.firstChild.remove();
+    setTimeout(() => item.classList.add('fade'), 3800);
+    setTimeout(() => item.remove(), 4400);
+  }
+
+  clearLog() { this.battleLog.innerHTML = ''; }
 
   feed(killer, moveName, victim) {
     const item = el('div', 'feed-item', killer

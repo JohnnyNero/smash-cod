@@ -299,6 +299,33 @@ instead of running through, while rolls still cross through and aerial cross-ups
   flip. The extra clips live in `public/models/charizard_clips.json` (exported from the full
   clip set, loaded with the model).
 
+## Showdown status conditions & secondary effects (stage 1 of the Showdown layer)
+
+`src/status.js` plays Showdown's status conditions out in real time. One major status at a
+time, Showdown's type immunities (Fire can't burn, Electric can't be paralyzed, Poison/Steel
+can't be poisoned, Ice can't freeze), each timed rather than permanent:
+
+| | effect | lasts |
+|---|---|---|
+| BRN | +1.2% a second; the burned Pokémon's physical hits do 0.75x | 12 s |
+| PAR | run/air speed 0.75x; every 1.5 s a 25% chance to be fully paralyzed (stuck ~0.4 s) | 10 s |
+| PSN | +1% a second | 10 s |
+| TOX | +0.35% x ticks so far, every second (~19% total) | 10 s |
+| FRZ | frozen solid (can't act, pose stops, icy tint); mash to break out; any hit shatters it | 1.3–2.8 s |
+| confusion | left and right swapped, stars round the head | 5 s |
+
+A major status survives switching (its timer pauses on the bench); switching cures confusion and
+thaws. KO clears everything. HUD shows Showdown-coloured tags; a Showdown-style battle log
+(top left, or bottom centre on touch) narrates ("Blastoise was frozen solid!").
+
+**Secondary effects** come straight from Showdown's data (`scripts/gen-dex.mjs` now exports
+`secondary`): Thunderbolt 10% PAR, Flamethrower / Flare Blitz 10% BRN, Ice Beam 10% FRZ, Sludge
+Bomb 30% PSN, Sludge Wave 10% PSN, Shadow Ball 20% SpD -1, Iron Tail 30% Def -1, Rapid Spin
++1 Spe. They roll **once per use of a move per target**, not per hitbox, so a Flamethrower
+stream gets one 10% chance, not a dozen. (A "called" move in the upcoming Showdown mode lands its
+effect every time.) Also fixed: projectile hits never counted as projectiles, so their lighter
+shieldstun never applied.
+
 ## Type hit freeze & hitstun cancel (research round 2, items 4 and 6)
 
 - **Type-flavoured hit freeze:** Electric hits freeze 1.5x longer (Ultimate's electric hitlag)
