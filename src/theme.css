@@ -1,0 +1,193 @@
+/* Showdown theme: the whole UI in Pokémon Showdown's look (light panels, Verdana, grey gradient
+   buttons, type-coloured move buttons, type badges, sprites), slightly improved: rounded
+   corners and soft shadows so panels read over the 3D stadium, bigger tap targets, clear gold
+   focus rings for gamepad/keyboard, consistent spacing. Loaded after style.css / showdown.css
+   and overrides them. The big display type (logo, countdown, GAME!, %) stays. */
+
+:root {
+  --ink: #222;
+  --dim: #666;
+  --panel: rgba(248, 248, 248, 0.94);
+  --edge: #c8c8c8;
+  --sd-border: #aaa;
+  --sd-blue: #445588;
+  --sd-brown: #884422;
+  --focus: #f0b400;
+  --shadow: 0 3px 12px rgba(0, 0, 0, 0.28);
+  font-family: Verdana, Helvetica, Arial, sans-serif;
+}
+
+b { color: inherit; }
+
+/* ---- shared pieces ------------------------------------------------------------------ */
+.typeimg { width: 32px; height: 14px; image-rendering: pixelated; vertical-align: middle; margin-right: 2px; }
+.type { font-family: Verdana, sans-serif; border-radius: 3px; }
+
+/* Showdown's .button: grey gradient, 1px border, rounded. */
+.panel button, .ready-btn, .cpu-badge, .val-btn, .arrow, .leave, .pick-mon, .sd-btn {
+  font-family: Verdana, Helvetica, Arial, sans-serif;
+}
+.panel button, .ready-btn, .pick-mon, .result-btns button {
+  background: linear-gradient(to bottom, #f6f6f6, #e3e3e3);
+  border: 1px solid var(--sd-border); border-radius: 5px; color: #222; text-shadow: none;
+}
+.panel button:hover, .ready-btn:hover, .pick-mon:hover {
+  background: linear-gradient(to bottom, #ffffff, #ececec); border-color: #777;
+}
+.panel button:active, .ready-btn:active, .pick-mon:active { background: linear-gradient(to bottom, #d8d8d8, #e8e8e8); }
+.panel button small, .ready-btn small { color: #777; }
+
+/* type-coloured buttons outside the turn screen share Showdown's .movebutton colours (.mbtn.type-X) */
+.mbtn { border: 1px solid #aaa; border-radius: 5px; color: #222; }
+
+/* ---- title ---------------------------------------------------------------------------- */
+.controls > div {
+  background: var(--panel); border: 1px solid var(--sd-border); border-radius: 6px; clip-path: none;
+  color: #555; box-shadow: var(--shadow);
+}
+.controls h4 { color: var(--sd-brown); font-style: italic; letter-spacing: 0.02em; font-size: 11pt; }
+.controls b { color: #222; }
+.subtitle { color: #fff; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6); }
+.press { color: #fff; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6); }
+
+/* ---- select / team builder ----------------------------------------------------------- */
+.select { background: radial-gradient(ellipse at center, rgba(8, 10, 22, 0) 40%, rgba(8, 10, 22, 0.55) 100%); }
+.select-top h2 { color: #fff; }
+.rules { color: #fff; background: rgba(34, 34, 34, 0.7); border-radius: 4px; padding: 3px 10px; letter-spacing: 0.08em; font-size: 11px; }
+.card {
+  background: var(--panel); color: #222; border: 1px solid var(--sd-border); border-top: 4px solid var(--pc);
+  border-radius: 6px; clip-path: none; box-shadow: var(--shadow); backdrop-filter: none;
+}
+.card.is-ready { box-shadow: var(--shadow), inset 0 0 0 2px var(--pc); }
+.pn { color: var(--pc); font-size: 22px; }
+.dev { color: #777; font-size: 10px; }
+.leave { color: #888; border-radius: 4px; }
+.leave:hover { background: #eee; }
+.op-head { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.card-spr { width: 72px; height: 72px; object-fit: contain; flex: none; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.25)); }
+.op-name { font-family: Verdana, sans-serif; font-weight: bold; font-size: clamp(18px, 2.2vw, 26px); color: #222; margin: 0; }
+.op-name small { font-family: Verdana, sans-serif; letter-spacing: 0; margin-top: 4px; }
+.op-blurb { color: #555; font-size: 11px; }
+.stats { gap: 2px 14px; }
+.stat { grid-template-columns: 30px 28px 1fr; color: #555; font-size: 10px; letter-spacing: 0; }
+.stat em { font-style: normal; text-align: right; padding-right: 5px; color: #222; font-weight: bold; }
+.bar { height: 6px; background: #e4e4e4; border-radius: 3px; overflow: hidden; }
+.bar i { border-radius: 3px; }
+.moves { gap: 4px; }
+.mv { font-weight: normal; font-size: 10.5px; padding: 5px 7px; border-left-width: 1px; color: #222; }
+.mv i { color: #666; font-weight: bold; }
+.mv small { color: #666; }
+.ability { color: #555; }
+.ability b { color: var(--sd-blue); }
+.team-line span { background: #e8e8e8; color: #555; border: 1px solid #ccc; border-radius: 4px; font-weight: bold; display: flex; align-items: center; justify-content: center; }
+.team-line span.on { background: var(--pc); color: #fff; border-color: var(--pc); }
+.row { border-radius: 4px; border-left: 3px solid transparent; }
+.row.sel { background: rgba(240, 180, 0, 0.14); border-left-color: var(--focus); }
+.row .lbl { color: #777; letter-spacing: 0.06em; font-size: 10px; }
+.row .val { color: #222; letter-spacing: 0.02em; }
+.val-btn { text-decoration-color: #999; }
+.arrow { color: var(--pc); border-radius: 4px; min-width: 34px; }
+.arrow:hover { background: #eee; }
+.row .mini-types, .row .mv-meta { color: #777; }
+.editing { color: var(--sd-brown); font-style: italic; letter-spacing: 0.02em; }
+.ready-btn { letter-spacing: 0.12em; font-weight: bold; padding: 10px; }
+.is-ready .ready-btn { background: var(--pc); color: #fff; border-color: var(--pc); }
+.row.sel .ready-btn { outline: 3px solid var(--focus); outline-offset: 1px; }
+.cpu-badge { background: #eee; border: 1px solid #ccc; border-radius: 5px; color: #555; }
+.join .big { color: #222; }
+.join .small { color: #666; }
+.join .small b { color: var(--sd-blue); }
+.select-hint { color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8); }
+.select-hint b { color: #ffd23a; }
+.start-btn {
+  clip-path: none; border-radius: 6px; border: 1px solid #a07800; box-shadow: var(--shadow);
+  background: linear-gradient(to bottom, #ffe070, #f0b400); color: #222; font-family: Verdana, sans-serif; font-weight: bold;
+}
+
+/* ---- battle HUD (Showdown stat bars, % instead of HP) --------------------------------- */
+.hud-card {
+  background: var(--panel); color: #222; border: 1px solid var(--sd-border); border-bottom: 3px solid var(--pc);
+  border-radius: 6px; clip-path: none; box-shadow: var(--shadow);
+}
+.portrait { clip-path: none; border-radius: 5px; background: #eee !important; border: 2px solid var(--pc); overflow: hidden; }
+.hud-card .name { color: #222; letter-spacing: 0.02em; font-size: 11px; }
+.hud-card .name small { color: var(--pc); }
+.pct { text-shadow: 0 2px 0 rgba(0, 0, 0, 0.25); -webkit-text-stroke: 1px rgba(0, 0, 0, 0.35); }
+.stocks i { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4); }
+.stocks .score { color: var(--sd-blue); }
+.pp { background: none; border: 1px solid #aaa; border-radius: 4px; padding: 1px 5px; color: #222; font-size: 10px; }
+.pp i { color: #666; }
+.pp b { color: #444; }
+.pp.low b { color: #c07000; }
+.pp.out b { color: #d02000; }
+.pp.unknown { background: #e8e8e8 !important; border-color: #bbb !important; color: #888; }
+.pp.called { outline: 2px solid var(--focus); box-shadow: 0 0 8px rgba(240, 180, 0, 0.7); }
+.pp em.se { color: #2a9a1a; } .pp em.nve { color: #c0501a; } .pp em.none { color: #888; }
+/* status pills in Showdown's colours */
+.status span { border-radius: 3px; font-family: Verdana, sans-serif; font-size: 8px; padding: 1px 3px; color: #fff; }
+.status .up { background: #e5ffe0; color: #33aa00; border: 1px solid #33aa00; }
+.status .down { background: #ffe5e0; color: #ff4400; border: 1px solid #ff4400; }
+.status .st-brn { background: #ee5533; } .status .st-par { background: #9aa400; color: #fff; }
+.status .st-psn, .status .st-tox { background: #a4009a; } .status .st-frz { background: #009aa4; color: #fff; }
+.status .slp { background: #aa77aa; }
+.team-strip span { background: #eee; border: 1px solid #ccc; border-radius: 4px; color: #444; }
+.team-strip span b { color: #222; }
+.team-strip span i { color: #888; }
+.team-strip span.active { background: color-mix(in srgb, var(--pc) 22%, #fff); border-color: var(--pc); }
+.popup { text-shadow: 0 1px 0 #000, 0 0 6px rgba(0, 0, 0, 0.6); }
+.timer { background: var(--panel); color: #222; border: 1px solid var(--sd-border); border-radius: 6px; clip-path: none; text-shadow: none; box-shadow: var(--shadow); }
+.field-bar span { background: var(--panel); color: #222; border: 1px solid var(--sd-border); border-radius: 5px; box-shadow: var(--shadow); letter-spacing: 0.04em; font-size: 11px; }
+.field-bar .wx.sun { color: #b86a00; } .field-bar .wx.rain { color: #2a5ab0; }
+.feed-item { background: var(--panel); color: #222; border: 1px solid var(--sd-border); border-radius: 5px; box-shadow: var(--shadow); letter-spacing: 0.02em; font-size: 12px; }
+.feed-item .w { color: #777; }
+
+/* ---- battle log: Showdown's log look ------------------------------------------------- */
+.log-line {
+  background: rgba(255, 255, 255, 0.93); color: #222; border: 1px solid #ccc; border-left: 3px solid #999;
+  border-radius: 4px; font-size: 12px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+.log-line.ability { border-left-color: #6a8ad0; font-style: italic; color: #445588; }
+.log-line.turn { border-left-color: #222; font-weight: bold; letter-spacing: 0.04em; background: #eef1f6; }
+
+/* ---- team preview / KO picks --------------------------------------------------------- */
+.picks { background: rgba(6, 8, 18, 0.55); }
+.pick-panel h2 { color: #fff; text-shadow: 0 3px 0 rgba(0, 0, 0, 0.5); font-family: Verdana, sans-serif; font-weight: bold; font-size: clamp(24px, 4vw, 40px); }
+.pick-sub { color: #eee; }
+.pick-sub b { color: #ffd23a; }
+.pick-vs { color: #fff; font-family: Verdana, sans-serif; font-weight: bold; font-style: italic; }
+.pick-col { background: var(--panel); color: #222; border: 1px solid var(--sd-border); border-top: 4px solid var(--pc); border-radius: 6px; box-shadow: var(--shadow); }
+.pick-head { font-family: Verdana, sans-serif; font-weight: bold; font-size: 16px; }
+.pick-head small { font-family: Verdana, sans-serif; color: #666; letter-spacing: 0.02em; }
+.pick-mon { border-left: 1px solid var(--sd-border); color: #222; }
+.pick-mon i { color: var(--pc); }
+.pick-mon .nm { letter-spacing: 0.02em; }
+.pick-mon.in { outline: 2px dashed #999; }
+.pick-mon .mu.good { color: #2a9a1a; } .pick-mon .mu.bad { color: #c0501a; }
+.pick-lock { color: #777; letter-spacing: 0.04em; }
+.pick-lock.locked { color: #33aa00; }
+.pick-timer { background: rgba(255, 255, 255, 0.3); border-radius: 2px; }
+.pick-timer i { background: var(--focus); }
+
+/* ---- pause & results ----------------------------------------------------------------- */
+.pause, .results { background: rgba(6, 8, 18, 0.55); }
+.panel {
+  background: var(--panel); color: #222; border: 1px solid var(--sd-border); border-top: 4px solid var(--focus);
+  border-radius: 6px; clip-path: none; box-shadow: var(--shadow);
+}
+.panel h2 { color: #222; font-family: Verdana, sans-serif; font-weight: bold; font-size: 28px; }
+.panel button { letter-spacing: 0.08em; font-weight: bold; }
+.winner { font-family: Verdana, sans-serif; font-weight: bold; text-shadow: none; }
+.results td:first-child { color: #777; }
+.results tr + tr td { border-top-color: #ddd; }
+@media (min-aspect-ratio: 6/5) {
+  .results { background: linear-gradient(90deg, rgba(6, 8, 18, 0) 0%, rgba(6, 8, 18, 0.1) 38%, rgba(6, 8, 18, 0.55) 62%); }
+}
+
+/* ---- focus rings (keyboard / gamepad / tap feedback) ---------------------------------- */
+.panel button:focus-visible, .ready-btn:focus-visible, .pick-mon:focus-visible, .arrow:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+
+@media (max-height: 520px) {
+  .card-spr { width: 44px; height: 44px; }
+  .op-name { font-size: 17px; }
+  .hud-card .name { font-size: 10px; }
+}

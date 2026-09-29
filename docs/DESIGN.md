@@ -299,6 +299,20 @@ instead of running through, while rolls still cross through and aerial cross-ups
   flip. The extra clips live in `public/models/charizard_clips.json` (exported from the full
   clip set, loaded with the model).
 
+## Showdown theme across the whole UI
+
+`src/theme.css` (loaded last) re-skins every screen in Showdown's look, slightly improved:
+light panels (#f8f8f8, 1px #aaa borders) with rounded corners and soft shadows so they read over
+the 3D stadium, Verdana, Showdown's grey gradient buttons, gold focus rings for keyboard and
+gamepad, and bigger tap targets. Showdown's per-type move-button colours are now generic
+(`.mbtn.type-X`) and used for the select-screen move lists and the HUD's PP rows as well as the
+turn screen (hidden moves show as plain grey "???" buttons). Type chips became Showdown's type
+badge images (`public/sprites/types`), base stats show Showdown's teambuilder bars (the number,
+coloured by hue = stat x 180 / 255), the select cards show the animated sprite, and status and
+stat-change pills use Showdown's colours everywhere. The battle log, kill feed, turn clock,
+weather tag, team preview / KO picks, pause and results all share the panel style. The big
+display type (logo, countdown, GAME!, the %) stays: it's a platform fighter.
+
 ## Showdown's UI and sprites
 
 The SHOWDOWN-mode turn screen copies Pokémon Showdown's battle UI (`src/showdown.css`; the

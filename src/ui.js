@@ -15,7 +15,9 @@ const el = (tag, cls, html = '') => {
   return e;
 };
 
-const typeChip = (t) => `<span class="type" style="--tc:${TYPE_COLORS[t] || '#888'}">${t.toUpperCase()}</span>`;
+// Showdown's type badges (sprites/types/*.png); falls back to a coloured chip.
+const typeChip = (t) => (t === '???' ? `<span class="type" style="--tc:${TYPE_COLORS[t] || '#888'}">???</span>`
+  : `<img class="typeimg" src="./sprites/types/${t}.png" alt="${t}" title="${t}">`);
 const SLOT_LABEL = { neutral: 'B', side: '→B', up: '↑B', down: '↓B' };
 
 function percentColor(p) {
@@ -115,7 +117,7 @@ export class UI {
       const b = sp.baseStats;
       const moves = Object.entries(mem.moves).map(([slot, id]) => {
         const mv = moveInfo(id);
-        return `<div class="mv" style="--tc:${TYPE_COLORS[mv.type]}"><i>${SLOT_LABEL[slot]}</i>${mv.name}<small>${mv.pp} PP</small></div>`;
+        return `<div class="mv mbtn type-${mv.type}" style="--tc:${TYPE_COLORS[mv.type]}"><i>${SLOT_LABEL[slot]}</i>${mv.name}<small>${mv.pp} PP</small></div>`;
       }).join('');
       const rows = s.rows.map((r, ri) => {
         const sel = s.row === ri && !s.ready ? 'sel' : '';
@@ -155,11 +157,12 @@ export class UI {
         <div class="card-head"><span class="pn">P${i + 1}</span><span class="dev">${s.deviceLabel}</span>
           ${s.cpu ? '' : `<button class="leave" data-action="leave" data-slot="${i}">✕</button>`}</div>
         ${teamLine}
-        <div class="op-name">${sp.name.toUpperCase()}<small>${sp.types.map(typeChip).join(' ')}</small></div>
+        <div class="op-head"><img class="card-spr" src="./sprites/front/${sp.model}.gif" alt="">
+          <div class="op-name">${sp.name}<small>${sp.types.map(typeChip).join(' ')}</small></div></div>
         <div class="op-blurb">${sp.blurb}</div>
         <div class="stats">
-          ${this.statBar('HP', b.hp / 150)}${this.statBar('ATK', b.atk / 150)}${this.statBar('DEF', b.def / 150)}
-          ${this.statBar('SPA', b.spa / 150)}${this.statBar('SPD', b.spd / 150)}${this.statBar('SPE', b.spe / 150)}
+          ${this.statBar('HP', b.hp)}${this.statBar('Atk', b.atk)}${this.statBar('Def', b.def)}
+          ${this.statBar('SpA', b.spa)}${this.statBar('SpD', b.spd)}${this.statBar('Spe', b.spe)}
         </div>
         ${s.edit >= 0 ? editing : `<div class="moves">${moves}</div>`}
         ${s.edit < 0 && ABILITIES[mem.ability] ? `<div class="ability"><b>${ABILITIES[mem.ability].name}</b> ${ABILITIES[mem.ability].desc}</div>` : ''}
@@ -173,9 +176,12 @@ export class UI {
       ${m.canStart ? '<button class="start-btn" data-action="start">BATTLE ▶</button>' : ''}`;
   }
 
+  // A base stat, Showdown teambuilder style: the number, and a bar coloured red → green → blue
+  // by value (Showdown's hue = stat x 180 / 255).
   statBar(label, v) {
-    const pct = Math.max(0.05, Math.min(1, v)) * 100;
-    return `<div class="stat"><span>${label}</span><div class="bar"><i style="width:${pct}%"></i></div></div>`;
+    const pct = Math.max(4, Math.min(100, (v / 160) * 100));
+    const hue = Math.min(360, Math.floor((v * 180) / 255));
+    return `<div class="stat"><span>${label}</span><em>${v}</em><div class="bar"><i style="width:${pct}%;background:hsl(${hue},85%,45%)"></i></div></div>`;
   }
 
   // --- HUD -----------------------------------------------------------------
@@ -200,7 +206,7 @@ export class UI {
 
   buildCard(c, f, p) {
     const moves = Object.entries(f.moveset.specials).map(([slot, mv]) =>
-      `<div class="pp" data-slot="${slot}" style="--tc:${TYPE_COLORS[mv.type]}"><i>${SLOT_LABEL[slot]}</i><span class="pn2"></span><em></em><b></b></div>`).join('');
+      `<div class="pp mbtn type-${mv.type}" data-slot="${slot}" style="--tc:${TYPE_COLORS[mv.type]}"><i>${SLOT_LABEL[slot]}</i><span class="pn2"></span><em></em><b></b></div>`).join('');
     const strip = this.teamMode
       ? `<div class="team-strip">${p.team.map((t, k) => `<span data-k="${k}"><i>${['◀', '▲', '▶'][k]}</i><img class="picon sm" src="./sprites/icons/${t.sp.model}.png" alt="">${t.sp.name}<b></b></span>`).join('')}</div>`
       : '';
@@ -280,6 +286,7 @@ export class UI {
           e.querySelector('.pn2').textContent = known ? mv.name : '???';
           e.querySelector('b').textContent = !known ? '' : pp > 0 ? `${pp}/${mv.pp}` : 'STRUGGLE';
           e.style.setProperty('--tc', known ? TYPE_COLORS[mv.type] : '#555');
+          e.classList.toggle('unknown', !known); // hidden moves show as a plain grey button
           e.classList.toggle('low', pp > 0 && pp <= Math.ceil(mv.pp / 4));
           e.classList.toggle('out', pp <= 0);
         });
@@ -407,7 +414,7 @@ export class UI {
     const sides = players.map((p, i) => {
       const f = pf(i);
       const opts = k.opts[i];
-      const moves = opts.map((o, r) => (o.kind !== 'move' ? '' : `<button class="movebutton type-${o.move.type} ${o.ok ? '' : 'off'}" data-action="tpick" data-slot="${i}" data-row="${r}">
+      const moves = opts.map((o, r) => (o.kind !== 'move' ? '' : `<button class="movebutton mbtn type-${o.move.type} ${o.ok ? '' : 'off'}" data-action="tpick" data-slot="${i}" data-row="${r}">
           <span class="nm">${o.move.name}</span>${effTag(o)}<small class="type">${o.move.type}</small><small class="pp">${o.pp}/${o.move.pp}</small></button>`)).join('');
       const sw = opts.map((o, r) => (o.kind !== 'switch' ? '' : `<button data-action="tpick" data-slot="${i}" data-row="${r}">
           <img src="./sprites/icons/${o.mon.sp.model}.png" alt="">${o.mon.sp.name}<small>${Math.floor(o.mon.percent)}%</small></button>`)).join('');
