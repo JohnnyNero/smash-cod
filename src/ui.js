@@ -6,6 +6,7 @@ import { moveInfo } from './data/moveset.js';
 import { moveEffect, typeEffectiveness } from './damage.js';
 import { SPECIES } from './data/pokemon.js';
 import { STATUS } from './status.js';
+import { ABILITIES } from './abilities.js';
 
 const el = (tag, cls, html = '') => {
   const e = document.createElement(tag);
@@ -134,6 +135,9 @@ export class UI {
           const mv = moveInfo(mem.moves[r.key.slice(3)]);
           val = `<span style="color:${TYPE_COLORS[mv.type]}">${r.value}</span>`;
           extra = `<span class="mv-meta">${mv.type.toUpperCase()} · ${mv.cat.toUpperCase()}${mv.power ? ' · ' + mv.power + ' BP' : ''} · ${mv.pp} PP</span>`;
+        } else if (r.key === 'ab') {
+          const ab = ABILITIES[mem.ability];
+          extra = ab ? `<span class="mv-meta">${ab.desc}</span>` : '';
         }
         return `<div class="row ${sel}">
           <span class="lbl">${r.label}</span>
@@ -146,7 +150,7 @@ export class UI {
       const teamLine = m.mode === 'TEAM'
         ? `<div class="team-line">${s.team.map((t, k) => `<span class="${k === s.focus ? 'on' : ''}">${SPECIES[t.species].name}</span>`).join('')}</div>`
         : '';
-      const editing = `<div class="editing">EDITING ${sp.name.toUpperCase()}'S MOVES · 4 from its real learnset</div>`;
+      const editing = `<div class="editing">EDITING ${sp.name.toUpperCase()} · moves from its real learnset, and its ability</div>`;
       return `<div class="card ${s.ready ? 'is-ready' : ''}" style="--pc:${color}">
         <div class="card-head"><span class="pn">P${i + 1}</span><span class="dev">${s.deviceLabel}</span>
           ${s.cpu ? '' : `<button class="leave" data-action="leave" data-slot="${i}">✕</button>`}</div>
@@ -158,6 +162,7 @@ export class UI {
           ${this.statBar('SPA', b.spa / 150)}${this.statBar('SPD', b.spd / 150)}${this.statBar('SPE', b.spe / 150)}
         </div>
         ${s.edit >= 0 ? editing : `<div class="moves">${moves}</div>`}
+        ${s.edit < 0 && ABILITIES[mem.ability] ? `<div class="ability"><b>${ABILITIES[mem.ability].name}</b> ${ABILITIES[mem.ability].desc}</div>` : ''}
         ${s.cpu ? `<div class="cpu-badge">CPU · ${m.cpuName}</div>` : rows}
       </div>`;
     }).join('');
@@ -252,6 +257,9 @@ export class UI {
       if (f.state === 'sleep') tags.push('<span class="slp">SLP</span>');
       if (f.status) tags.push(`<span class="st-${f.status.id}">${STATUS[f.status.id].name}</span>`);
       if (f.confusion > 0) tags.push('<span class="cnf">CONFUSED</span>');
+      const ab = ABILITIES[f.ability];
+      if (ab && ab.pinch && f.percent >= 100) tags.push(`<span class="pinch">${ab.name.toUpperCase()}</span>`);
+      if (f.disabled) tags.push(`<span class="dis">${f.moveset.specials[f.disabled.slot].name.toUpperCase()} DISABLED</span>`);
       if (f.seed) tags.push('<span class="seed">SEEDED</span>');
       if (f.destinyBond > 0) tags.push('<span class="bond">BOND</span>');
       set('status', tags.join(''), (v) => { c.status.innerHTML = v; });

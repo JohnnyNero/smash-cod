@@ -56,7 +56,7 @@ export class Fighter {
       buf: {}, bufFlick: null, bufStick: null, forceShortHop: false, softLand: false,
       dashF: 0, dashDir: 1, skidF: 0,
       boosts: {}, sleepFrames: 0, seed: null, destinyBond: 0,
-      status: null, confusion: 0, frozenF: 0,
+      status: null, confusion: 0, frozenF: 0, disabled: null,
     });
     this.st = fighterStats(this.sp);
     this.pp = {};
@@ -131,6 +131,7 @@ export class Fighter {
     if (this.destinyBond > 0) this.destinyBond--;
     if (this.seed) this.tickSeed();
     if (this.status || this.confusion) this.tickStatus();
+    if (this.disabled && --this.disabled.frames <= 0) this.disabled = null;
     this.readInput(inp);
 
     if (this.onRevival) {
@@ -523,6 +524,12 @@ export class Fighter {
 
   startSpecial() {
     const slot = this.dirSlot(this.sx, this.sy);
+    if (this.disabled && this.disabled.slot === slot && this.disabled.frames > 0) {
+      // Cursed Body: this move can't be used for a while.
+      this.consume('special');
+      this.game.popup(this.slot, `${this.moveset.specials[slot].name.toUpperCase()} IS DISABLED`, 'bad');
+      return;
+    }
     if (slot === 'side' && this.sx) this.facing = Math.sign(this.sx);
     let m = this.moveset.specials[slot];
     if (this.pp[slot] <= 0) {
@@ -1475,6 +1482,13 @@ export class Fighter {
       this.lastHitMove = hit.source;
     }
 
+    // Inner Focus: weak hits don't interrupt its attacks (it still takes the %).
+    if (this.ability === 'innerfocus' && !hit.throw && this.state === 'attack' && hit.damage < 6) {
+      this.flash = 0.8;
+      g.onAbility(this);
+      return { result: 'hit', launch: 0, armored: true };
+    }
+
     // Smash-style: weight only resists the part of knockback that grows with damage, so light
     // Pokémon aren't flung further by weak hits at low percent.
     const launch = hit.kb * COMBAT.baseKbMult + (this.percent * hit.grow * (0.5 + hit.damage / 20)) / this.st.weight;
@@ -1500,6 +1514,7 @@ export class Fighter {
     this.hitstun = launch * COMBAT.hitstunPerLaunch + 0.05;
     this.tumble = launch > COMBAT.tumbleAt;
     this.launchedHard = this.tumble;
+    if (this.tumble && this.ability === 'steadfast' && (this.boosts.spe || 0) < 6) { g.onAbility(this); this.applyBoosts({ spe: 1 }); }
     this.hsCancelShown = false;
     this.flash = 1;
     this.fastFall = false;

@@ -8,7 +8,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SIM_DT, STAGE, SHIELD, COMBAT, PHYS, PLAYER_COLORS, RULES, TYPE_COLORS } from './config.js';
 import { SPECIES, SPECIES_LIST } from './data/pokemon.js';
 import { SLOTS, moveInfo } from './data/moveset.js';
-import { loadTeam, saveTeam, randomTeam, cycleSpecies, cycleMove, matchupScore, member } from './team.js';
+import { loadTeam, saveTeam, randomTeam, cycleSpecies, cycleMove, cycleAbility, matchupScore, member } from './team.js';
+import { ABILITIES, DISABLE_FRAMES } from './abilities.js';
 import { PUMMEL } from './data/moves.js';
 import { damageFor, moveEffect } from './damage.js';
 import { Fighter } from './fighter.js';
@@ -219,7 +220,7 @@ export class Game {
   // Card rows. On a Pokémon row, ◀▶ changes species and A opens its move editor.
   rowsFor(i) {
     const s = this.slots[i];
-    if (s.edit >= 0) return [...SLOTS.map((k) => 'mv:' + k), 'done'];
+    if (s.edit >= 0) return [...SLOTS.map((k) => 'mv:' + k), 'ab', 'done'];
     const mons = this.mode === 'TEAM' ? [0, 1, 2] : [0];
     const rules = i === 0 ? (this.mode === 'TEAM' ? ['mode', 'cpu'] : ['mode', 'limit', 'cpu']) : [];
     return [...mons.map((k) => 'mon:' + k), ...rules, 'ready'];
@@ -228,13 +229,14 @@ export class Game {
   rowLabel(key) {
     if (key.startsWith('mon:')) return this.mode === 'TEAM' ? `POKÉMON ${+key.slice(4) + 1}` : 'POKÉMON';
     if (key.startsWith('mv:')) return { neutral: 'B', side: '→B', up: '↑B', down: '↓B' }[key.slice(3)];
-    return { mode: 'MODE', limit: 'LIMIT', cpu: 'CPU', done: '', ready: '' }[key];
+    return { mode: 'MODE', limit: 'LIMIT', cpu: 'CPU', ab: 'ABILITY', done: '', ready: '' }[key];
   }
 
   rowValue(key, s) {
     const st = this.settings;
     if (key.startsWith('mon:')) return SPECIES[s.team[+key.slice(4)].species].name.toUpperCase();
     if (key.startsWith('mv:')) return moveInfo(s.team[s.edit].moves[key.slice(3)]).name;
+    if (key === 'ab') { const a = ABILITIES[s.team[s.edit].ability]; return a ? a.name.toUpperCase() : '—'; }
     switch (key) {
       case 'mode': return RULES.modes[st.mode];
       case 'limit': return this.mode === 'TIME' ? `${st.minutes} MIN` : `${st.stocks} STOCK`;
@@ -253,6 +255,9 @@ export class Game {
       saveTeam(i, s.team);
     } else if (key.startsWith('mv:')) {
       cycleMove(s.team[s.edit], key.slice(3), dir);
+      saveTeam(i, s.team);
+    } else if (key === 'ab') {
+      cycleAbility(s.team[s.edit], dir);
       saveTeam(i, s.team);
     } else if (i !== 0) {
       return;
@@ -429,6 +434,7 @@ export class Game {
       const brain = isCpu ? new CpuBrain(demo ? 2 : st.cpu) : null;
       const team = defs.map((m) => {
         const f = new Fighter(this, i, SPECIES[m.species], PLAYER_COLORS[i], m.moves);
+        f.ability = m.ability || null;
         Object.assign(f, { device, isCpu, brain, stocks: this.mode === 'TEAM' && !demo ? 1 : st.stocks, benched: true });
         f.model = new CreatureModel({ species: f.sp, colors: f.colors, label: `P${i + 1}` });
         f.model.root.visible = false;
@@ -1162,6 +1168,17 @@ export class Game {
     const stale = a.staleMult ? a.staleMult(move) : 1;
     const dmg = damageFor(a, d, base * stale, move);
     const grassImmune = d.sp.types.includes('Grass') && (move.powder || hb.effect === 'seed');
+    // Lightning Rod: Electric moves are drawn in and absorbed: +1 Sp. Atk (once per move use).
+    if (d.ability === 'lightningrod' && move.type === 'Electric' && move.special) {
+      const key = `${a.slot}:${hb.serial ?? a.moveSerial}`;
+      if (d.rodKey !== key) {
+        d.rodKey = key;
+        this.onAbility(d);
+        if ((d.boosts.spa || 0) < 6) d.applyBoosts({ spa: 1 });
+      }
+      this.effects.sparks(hx, hy, 0, 0, 0xfff27a, 10, 6);
+      return { result: 'immune' };
+    }
     if (dmg.eff === 0 || grassImmune) {
       if (!this.demo) this.effects.callout(hx, hy + 0.6, 'NO EFFECT', 0xb8c0d0);
       this.audio.block(hx);
@@ -1228,6 +1245,7 @@ export class Game {
         }
       }
       this.rollSecondary(a, d, move, hb);
+      this.contactAbilities(a, d, move, hb);
       if (move.drain) {
         const heal = dmg.damage * move.drain;
         a.percent = Math.max(0, a.percent - heal);
@@ -1359,6 +1377,36 @@ export class Game {
     if (st === 'brn' && Math.random() < 0.1) {
       this.effects.add(0, hx + (Math.random() - 0.5) * f.w, f.pos.y + Math.random() * f.h * 0.8, 0.2, 0, 1.5, 0, 0.4, 0.05, 0xff8a30, { grav: -2, drag: 1 });
     }
+  }
+
+  // Abilities that trigger when hit: Static (contact may paralyze the attacker) and Cursed
+  // Body (a special that hits may be disabled). Once per move use.
+  contactAbilities(a, d, move, hb) {
+    if (!d.ability || a === d) return;
+    const key = `${a.slot}:${hb.serial ?? a.moveSerial}`;
+    if (d.abilityKey === key) return;
+    d.abilityKey = key;
+    const contact = hb.speed === undefined && (!move.special || move.contact);
+    if (d.ability === 'static' && contact && !a.status && Math.random() < 0.3) {
+      this.onAbility(d);
+      a.inflict('par', d);
+    }
+    if (d.ability === 'cursedbody' && move.special && move.slot && !a.disabled && Math.random() < 0.3) {
+      a.disabled = { slot: move.slot, frames: DISABLE_FRAMES };
+      this.onAbility(d);
+      if (!this.demo) {
+        this.ui.log(`${a.sp.name}'s ${move.name} was disabled!`);
+        this.effects.callout(a.pos.x, a.pos.y + a.h + 0.7, 'DISABLED!', 0x9a6ad0);
+      }
+    }
+  }
+
+  // Showdown's ability banner: "[Pikachu's Static]".
+  onAbility(f) {
+    const ab = ABILITIES[f.ability];
+    if (!ab || this.demo) return;
+    this.ui.log(`[${f.sp.name}'s ${ab.name}]`, 'ability');
+    this.ui.popup(f.slot, ab.name.toUpperCase(), 'good');
   }
 
   // Status callouts in Showdown's words ("Pikachu is paralyzed! It may be unable to move!").

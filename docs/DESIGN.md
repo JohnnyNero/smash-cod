@@ -299,6 +299,27 @@ instead of running through, while rolls still cross through and aerial cross-ups
   flip. The extra clips live in `public/models/charizard_clips.json` (exported from the full
   clip set, loaded with the model).
 
+## Abilities (stage 2 of the Showdown layer)
+
+Each Pokémon carries one ability (`src/abilities.js`), picked in the team builder (ABILITY row
+under the moves) from the abilities its species really has in Showdown, where there's a
+real-time version:
+
+| Pokémon | ability | in real time |
+|---|---|---|
+| Pikachu | Static | contact hits on it: 30% the attacker is paralyzed |
+| Pikachu | Lightning Rod | Electric specials aimed at it are absorbed: +1 Sp. Atk instead |
+| Charizard | Blaze | Fire moves 1.5x at 100% or more (Showdown: under 1/3 HP) |
+| Blastoise | Torrent | Water moves 1.5x at 100% or more |
+| Venusaur | Overgrow | Grass moves 1.5x at 100% or more |
+| Gengar | Cursed Body | specials that hit it: 30% that move is disabled for 4 s |
+| Lucario | Steadfast | +1 Speed each time it's launched hard |
+| Lucario | Inner Focus | hits under 6% don't interrupt its attacks (it still takes the %) |
+
+Triggers show Showdown's banner in the battle log ("[Pikachu's Static]"); Blaze/Torrent/Overgrow
+show a pulsing tag on the HUD while active, and a disabled move shows as DISABLED. Solar Power,
+Rain Dish and Chlorophyll arrive with weather.
+
 ## Showdown status conditions & secondary effects (stage 1 of the Showdown layer)
 
 `src/status.js` plays Showdown's status conditions out in real time. One major status at a

@@ -5,11 +5,15 @@ import { SPECIES, SPECIES_LIST } from './data/pokemon.js';
 import { DEX } from './data/dex.js';
 import { SLOTS } from './data/moveset.js';
 import { typeEffectiveness } from './damage.js';
+import { abilityPool, defaultAbility } from './abilities.js';
 
 export const TEAM_SIZE = 3;
 const STORAGE_KEY = 'showdownSmash.teams';
 
-export const member = (species, moves) => ({ species, moves: { ...(moves || SPECIES[species].moves) } });
+export const member = (species, moves, ability) => ({
+  species, moves: { ...(moves || SPECIES[species].moves) },
+  ability: ability && abilityPool(SPECIES[species]).includes(ability) ? ability : defaultAbility(SPECIES[species]),
+});
 
 export function defaultTeam(slot) {
   const ids = slot === 0 ? ['pikachu', 'charizard', 'lucario'] : ['blastoise', 'venusaur', 'gengar'];
@@ -40,7 +44,7 @@ export function loadTeam(slot) {
   try {
     const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
     const t = all[`P${slot + 1}`];
-    if (validTeam(t)) return t.map((m) => member(m.species, m.moves));
+    if (validTeam(t)) return t.map((m) => member(m.species, m.moves, m.ability));
   } catch {
     // Storage can be blocked or corrupt; fall back to the default team.
   }
@@ -79,6 +83,14 @@ export function cycleMove(m, slot, dir) {
     if (!others.has(pool[k])) break;
   }
   m.moves[slot] = pool[k];
+}
+
+// Cycle a team member's ability through the ones its species can have.
+export function cycleAbility(m, dir) {
+  const pool = abilityPool(SPECIES[m.species]);
+  if (!pool.length) return;
+  const k = pool.indexOf(m.ability);
+  m.ability = pool[(k + dir + pool.length) % pool.length];
 }
 
 // How good is `me` into `foe`? Best super-effective STAB-ish coverage we have, minus how hard
