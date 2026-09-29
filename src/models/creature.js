@@ -1011,7 +1011,7 @@ export class CreatureModel {
     }
 
     if (this.parts.update) this.parts.update(v, t, dt, this.springs);
-    if (this.parts.retarget) this.parts.retarget(dt); // rigged model: joints -> bones
+    if (this.parts.retarget) this.parts.retarget(dt, { ax: fwdAcc, ay, yawV: this.yawV || 0 }); // rigged model: joints -> bones
 
     // Blink every few seconds.
     this.blinkT -= dt;

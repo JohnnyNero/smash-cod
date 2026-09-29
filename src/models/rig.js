@@ -71,6 +71,8 @@ const TORSO_FALLBACK = [[['Hips', 'Waist'], 0.5]];
 const tq = new THREE.Quaternion();
 const tq2 = new THREE.Quaternion();
 const tq3 = new THREE.Quaternion();
+const tq4 = new THREE.Quaternion();
+const te2 = new THREE.Euler();
 const te = new THREE.Euler();
 const ID = new THREE.Quaternion();
 
@@ -164,8 +166,10 @@ export function buildRig(model, id, colors, makeMat) {
       if (!bone || drivers.some((d) => d.bone === bone)) continue;
       const P = bone.parent ? restWorld(bone.parent) : new THREE.Quaternion();
       // Follow-through: each further bone of a floppy chain lags a little behind the last.
+      // Floppy chains also get a per-bone spring wobble that grows toward the tip.
+      const jig = LAG[joint] ? { x: 0, vx: 0, z: 0, vz: 0, reach: k + 1 } : null;
       const lag = (LAG[joint] || 0) * k++;
-      drivers.push({ bone, dummy, weight, lag, P, Pinv: P.clone().invert(), qRest: bone.quaternion.clone(), C: new THREE.Quaternion() });
+      drivers.push({ bone, dummy, weight, lag, jig, P, Pinv: P.clone().invert(), qRest: bone.quaternion.clone(), C: new THREE.Quaternion() });
     }
   };
   for (const [joint, chain] of Object.entries(CHAINS)) addChain(joint, chain);
@@ -243,7 +247,8 @@ export function buildRig(model, id, colors, makeMat) {
     bones,
     drivers,
     // After creature.js has posed the joints: write them onto the bones.
-    retarget(dt = 1 / 60) {
+    // excite: the body's forward/vertical acceleration and turn rate, which set the springs going.
+    retarget(dt = 1 / 60, excite = null) {
       // Keep a short history of each joint's rotation for the lagging chain bones.
       for (const dm of Object.values(dummies)) {
         const h = dm.userData.hist || (dm.userData.hist = []);
@@ -262,6 +267,20 @@ export function buildRig(model, id, colors, makeMat) {
         } else {
           te.copy(d.dummy.rotation);
           tq3.setFromEuler(te);
+        }
+        if (d.jig && excite && dt > 0) {
+          // Underdamped spring per bone: kicked by acceleration (up/down swing) and turning
+          // (sideways whip); farther bones along the chain swing more.
+          const j = d.jig;
+          const h = Math.min(dt, 1 / 30);
+          const kick = 0.35 + 0.2 * j.reach;
+          j.vx += (-140 * j.x - 9 * j.vx + (-excite.ay * 0.0022 - excite.ax * 0.0016) * kick) * h;
+          j.vz += (-140 * j.z - 9 * j.vz + (excite.yawV * 0.06 + excite.ax * 0.0006) * kick) * h;
+          j.x = Math.max(-0.6, Math.min(0.6, j.x + j.vx * h));
+          j.z = Math.max(-0.6, Math.min(0.6, j.z + j.vz * h));
+          te2.set(j.x, 0, j.z);
+          tq4.setFromEuler(te2);
+          tq3.premultiply(tq4);
         }
         // (slerpQuaternions copies its first argument into the target before reading the
         // second, so the target must not also be an input.)

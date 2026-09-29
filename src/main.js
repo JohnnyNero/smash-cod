@@ -6,6 +6,7 @@ import { preloadRigs } from './models/rig.js';
 
 const input = new InputManager();
 const audio = new Audio();
+audio.loadCries(['pikachu', 'charizard', 'blastoise', 'venusaur', 'gengar', 'lucario']);
 // Load the Pokémon models first (about 2 MB); the game falls back to procedural models if not.
 await preloadRigs();
 const game = new Game(document.getElementById('game'), document.getElementById('ui'), input, audio);

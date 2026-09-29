@@ -575,6 +575,7 @@ export class Game {
     const c = f.center;
     this.effects.pokeball(this.trainerX(f.slot), 8, c.x, c.y, f.colors.main);
     f.model.appear();
+    this.audio.cry(f.model.species.model, c.x, { delay: 0.35 }); // cries as it pops out of the ball
   }
 
   // Volt Switch: after it hits, switch to the next healthy teammate for free.
@@ -1331,6 +1332,7 @@ export class Game {
   // forced: a Destiny Bond KO, which still counts even if the match just ended.
   onKO(f, forced = false) {
     if (f.dead) return;
+    this.audio.cry(f.model.species.model, f.pos.x, { rate: 0.8, gain: 0.5 }); // a pained, lower cry
     const killer = f.lastHitBy && this.time - f.lastHitTime < 8 ? f.lastHitBy : null;
     f.dead = true;
     f.respawnTimer = 1.6;
@@ -1426,6 +1428,8 @@ export class Game {
     this.canAct = false;
     this.ui.announce('GAME!', 'game', 2400);
     this.audio.say('Game!');
+    const champ = this.fighters[winner];
+    if (champ) this.audio.cry(champ.model.species.model, champ.pos.x, { delay: 1.4, gain: 0.55 }); // victory cry
   }
 
   // Per-player totals across the whole team for the results screen.

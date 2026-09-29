@@ -28,6 +28,44 @@ export class Audio {
     this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
     const data = this.noiseBuf.getChannelData(0);
     for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    this.decodeCries();
+  }
+
+  // Pokémon cries: small vendored MP3s (from Showdown), fetched up front and decoded once the
+  // audio context exists.
+  loadCries(ids) {
+    this.cryData ||= {};
+    this.cryBufs ||= {};
+    for (const id of ids) {
+      fetch(`./audio/cries/${id}.mp3`).then((r) => (r.ok ? r.arrayBuffer() : null)).then((b) => {
+        if (!b) return;
+        this.cryData[id] = b;
+        this.decodeCries();
+      }).catch(() => {});
+    }
+  }
+
+  decodeCries() {
+    if (!this.ctx || !this.cryData) return;
+    this.cryPending ||= {};
+    for (const [id, data] of Object.entries(this.cryData)) {
+      if (this.cryBufs[id] || this.cryPending[id]) continue;
+      this.cryPending[id] = true;
+      this.ctx.decodeAudioData(data.slice(0)).then((buf) => { this.cryBufs[id] = buf; }).catch(() => {});
+    }
+  }
+
+  cry(id, x, { rate = 1, gain = 0.45, delay = 0 } = {}) {
+    if (!this.ctx || !this.cryBufs) return;
+    const buf = this.cryBufs[id];
+    if (!buf) return;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = rate;
+    const g = this.ctx.createGain();
+    g.gain.value = gain;
+    src.connect(g).connect(this.out(x));
+    src.start(this.ctx.currentTime + delay);
   }
 
   // Title-screen attract mode plays at low volume with no announcer.
@@ -87,9 +125,17 @@ export class Audio {
 
   // Impact scaled by damage, with a type-flavoured layer.
   hit(x, dmg, type) {
-    const g = Math.min(1, 0.25 + dmg / 18);
-    this.noise(0.08 + dmg * 0.01, { freq: 2500 - Math.min(1800, dmg * 90), freqEnd: 200, gain: g, x });
-    this.tone(160 - Math.min(100, dmg * 5), 0.12 + dmg * 0.01, { type: 'square', freqEnd: 50, gain: g * 0.4, x });
+    // Layered like fighting-game hits: a sharp crack, a pitch-dropping body thump, a crunch,
+    // and for big hits a sub boom with an air tail. All scale with damage.
+    const k = Math.min(1, dmg / 20);
+    const g = 0.35 + 0.6 * k;
+    this.noise(0.025, { type: 'highpass', freq: 3000, gain: 0.5 * g, attack: 0.001, x });
+    this.tone(220 - 90 * k, 0.09 + 0.18 * k, { type: 'sine', freqEnd: 45, gain: 0.8 * g, attack: 0.001, x });
+    this.noise(0.06 + 0.1 * k, { type: 'bandpass', freq: 1800 - 900 * k, freqEnd: 300, q: 1.2, gain: 0.5 * g, x });
+    if (dmg >= 10) {
+      this.tone(70, 0.4 + 0.3 * k, { type: 'sine', freqEnd: 30, gain: 0.7 * k, x });
+      this.noise(0.35, { freq: 1200, freqEnd: 150, gain: 0.3 * k, delay: 0.01, x });
+    }
     if (type === 'Electric') this.tone(1200, 0.12, { type: 'sawtooth', freqEnd: 300, gain: 0.12, x });
     if (type === 'Steel') this.tone(1800, 0.25, { type: 'triangle', freqEnd: 1600, gain: 0.12, x });
     if (type === 'Fire') this.noise(0.25, { type: 'bandpass', freq: 800, freqEnd: 300, gain: 0.2, x });

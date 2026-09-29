@@ -204,6 +204,22 @@ target) now always runs: RenderPass -> bloom (high quality only) -> ink -> Outpu
 - KO% table and scripts: `ko.mjs` style sims (attacker Lucario, centre stage): forward smash KOs
   Pikachu ~80%, Blastoise ~115% (145% with good DI).
 
+## Audio, secondary motion and CPU pass
+
+- **Cries:** Showdown's MP3 cries for the six species are vendored in `public/audio/cries/`
+  (about 7 KB each), preloaded by `Audio.loadCries` and decoded once audio unlocks. They play on
+  Poké Ball send-out, (pitched down) on KO, and for the winner at GAME.
+- **Hits:** layered synth hits: a highpass crack, a pitch-dropping body thump, a band-passed
+  crunch and, from 10 damage, a sub boom with an air tail, all scaled by damage, plus the type layer.
+- **Spring wobble:** floppy bone chains (tails, ears, locks, wing feelers) get a per-bone
+  underdamped spring on top of the follow-through lag, kicked by the body's acceleration and turn
+  rate (farther bones swing more).
+- **CPU:** sees the opponent 24/15/9 frames late (easy/normal/hard) so it reacts like a person;
+  punishes visible end lag / landing lag / shield breaks (runs in, then jab, grab or smash);
+  edgeguards from the ledge (smash high returns, down tilt low ones, projectiles from afar) without
+  leaving the stage; each recovery picks random jump/up-special heights and sometimes aims for the
+  stage instead of the ledge. CPU-vs-CPU: 0 self-destructs in 24 KOs, average KO 129% (was 142%).
+
 ## Body push
 
 Like Smash (and Rivals), fighters aren't solid: overlapping fighters ease apart with a soft push
