@@ -94,6 +94,7 @@ export class Fighter {
   setState(s) {
     this.state = s;
     this.sf = 0;
+    this.holdAtk = null;
     if (s !== 'ground') { this.dashF = 0; this.skidF = 0; this.shieldDropF = 0; }
   }
 
@@ -279,6 +280,7 @@ export class Fighter {
   groundControl() {
     const inp = this.inp;
     const n = this.moveset.normals;
+    if (this.holdAtk && this.runHoldAttack()) return;
     if (this.shieldDropF > 0) {
       this.shieldDropF--;
       this.vel.x = approach(this.vel.x, 0, PHYS.groundFriction * DT);
@@ -371,13 +373,30 @@ export class Fighter {
     const n = this.moveset.normals;
     const { sx, sy } = this;
     if (Math.abs(this.vel.x) > this.st.runSpeed * 0.75 && Math.abs(sx) > 0.6) return this.startMove(n.dash);
-    if (sy > 0.5 && sy >= Math.abs(sx)) return this.startMove(n.utilt);
-    if (sy < -0.5 && -sy >= Math.abs(sx)) return this.startMove(n.dtilt);
-    if (Math.abs(sx) > 0.4) {
-      this.facing = Math.sign(sx);
-      return this.startMove(n.ftilt);
+    // Direction + attack: a tap is the tilt; keep holding attack and it becomes that
+    // direction's smash attack, charging while held (as well as the flick / right stick).
+    let tilt = null;
+    let smash = null;
+    if (sy > 0.5 && sy >= Math.abs(sx)) { tilt = n.utilt; smash = n.usmash; }
+    else if (sy < -0.5 && -sy >= Math.abs(sx)) { tilt = n.dtilt; smash = n.dsmash; }
+    else if (Math.abs(sx) > 0.4) { this.facing = Math.sign(sx); tilt = n.ftilt; smash = n.fsmash; }
+    if (tilt) {
+      this.consume('attack');
+      if (!this.inp.held.attack) return this.startMove(tilt); // already let go (CPU taps, buffered presses)
+      this.holdAtk = { tilt, smash, f: 0 };
+      return undefined;
     }
     return this.startMove(n.jab);
+  }
+
+  // Waiting to see whether a directional attack press is a tap (tilt) or a hold (smash).
+  runHoldAttack() {
+    const h = this.holdAtk;
+    this.vel.x = approach(this.vel.x, 0, PHYS.groundFriction * DT);
+    if (this.inp.pressed.jump) { this.holdAtk = null; return false; } // jump cancels it
+    if (!this.inp.held.attack) { this.holdAtk = null; this.startMove(h.tilt); return true; }
+    if (++h.f >= INPUT.holdSmash) { this.holdAtk = null; this.startMove(h.smash); return true; }
+    return true;
   }
 
   groundSmash(d) {

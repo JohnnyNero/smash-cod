@@ -260,6 +260,11 @@ export class Audio {
     }
   }
 
+  // Smash charge: a short rising blip, higher the longer it's held.
+  charge(x, k) {
+    this.tone(260 + 520 * k, 0.07, { type: 'triangle', freqEnd: 300 + 620 * k, gain: 0.05 + 0.04 * k, x });
+  }
+
   superEffective(x) {
     this.tone(660, 0.12, { type: 'square', gain: 0.12, x });
     this.tone(990, 0.2, { type: 'square', gain: 0.12, delay: 0.08, x });

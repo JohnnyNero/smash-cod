@@ -63,7 +63,7 @@ export class Game {
     const low = this.quality === 'low';
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.basePixelRatio = Math.min(window.devicePixelRatio || 1, low ? 1.5 : 2);
+    this.basePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
     this.fixedQuality = params.has('quality');
     this.dyn = { scale: 1, max: 1, avg: 1 / 60, t: 0 };
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -131,6 +131,10 @@ export class Game {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     if (this.composer) {
+      // The composer copies the renderer's pixel ratio only when it's created (at 1), so without
+      // this the whole frame rendered at 1 pixel per CSS pixel and was stretched: blurry on
+      // every high-density screen.
+      this.composer.setPixelRatio(pr);
       this.composer.setSize(w, h);
       if (this.bloom) this.bloom.resolution.set(w / 2, h / 2);
     }
@@ -982,6 +986,7 @@ export class Game {
         this.effects.trail(cur.pos.x, cur.pos.y + cur.h * 0.5, cur.colors.main);
       }
     });
+    for (const f of this.fighters) if (f.active && f.charging) this.chargeFx(f);
     this.bodyPush();
     this.resolveHits();
     this.spawnSwooshes();
@@ -1272,6 +1277,23 @@ export class Game {
   isFinalKO(f) {
     if (this.teamMode) return this.players[f.slot].team.every((t) => t === f || t.eliminated);
     return this.mode === 'STOCK' && f.stocks <= 1;
+  }
+
+  // Charging a smash: sparks gather into the fighter, a rising hum, and a flash at full charge.
+  chargeFx(f) {
+    const k = f.charge / COMBAT.smashChargeFrames;
+    const c = f.center;
+    if (f.charge % 3 === 0) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 0.9 + Math.random() * 0.5;
+      this.effects.add(0, c.x + Math.cos(a) * r, c.y + Math.sin(a) * r, 0.3, -Math.cos(a) * r * 4, -Math.sin(a) * r * 4, 0,
+        0.22, 0.07 + 0.05 * k, k > 0.95 ? 0xffffff : 0xffe070, { drag: 1 });
+    }
+    if (f.charge % 8 === 1) this.audio.charge(f.pos.x, k);
+    if (f.charge === COMBAT.smashChargeFrames - 1) {
+      this.effects.glint(c.x, c.y + f.h * 0.3, 0xfff4b0);
+      this.effects.ring(c.x, c.y, 0xffe070, 1.6, 0.25);
+    }
   }
 
   // Smash's finishing blow: slow motion, zoom onto the impact, a flash and a ping. Match-ending

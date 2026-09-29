@@ -36,7 +36,7 @@ working branch also deploys to GitHub Pages.
 | Move | L-stick (D-pad in menus) | WASD | Arrows | left thumb |
 | Jump (tap for short hop) | X | Space | ' | JUMP |
 | Attack (+ direction = tilts / aerials) | A | F | / | ATTACK |
-| Smash attack (hold to charge) | R-stick, or tap direction + A | tap direction + F | tap direction + / | flick + ATTACK |
+| Smash attack (keep holding to charge) | hold direction + hold A, R-stick, or tap direction + A | hold direction + hold F | hold direction + hold / | hold stick + hold ATTACK |
 | Special (+ direction = your 4 moves) | B | G | . | SPECIAL |
 | Shield (+ flick = roll / spot dodge; air = air dodge) | RB / LT / RT | H | , | SHIELD |
 | Grab (then direction = throw, attack = pummel) | LB, or shield + A | R | ; | GRAB |

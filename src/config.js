@@ -25,6 +25,7 @@ export const PHYS = {
 
 export const INPUT = {
   buffer: 7, // frames a press is remembered and used on the first frame you can act (Ultimate: 9)
+  holdSmash: 10, // direction + attack held this long becomes a (charging) smash attack instead of a tilt
 };
 
 export const COMBAT = {

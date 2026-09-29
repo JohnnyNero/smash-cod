@@ -299,6 +299,21 @@ instead of running through, while rolls still cross through and aerial cross-ups
   flip. The extra clips live in `public/models/charizard_clips.json` (exported from the full
   clip set, loaded with the model).
 
+## Sharpness & hold-to-smash
+
+- **Blur:** the EffectComposer copies the renderer's pixel ratio only when it's constructed
+  (before `setPixelRatio` ran, so 1), and `resize` never updated it. Every frame was rendered
+  at 1 pixel per CSS pixel and stretched: half resolution on a 2x screen, a third on a 3x
+  phone. `resize` now calls `composer.setPixelRatio`. Phones get up to 2x too (was 1.5x); the
+  dynamic resolution still steps down to 85% if a device can't hold 60 fps.
+- **Hold-to-smash:** on the ground, direction + attack is now decided by how long attack is
+  held: let go within `INPUT.holdSmash` (10 frames) and the tilt comes out; keep holding and it
+  becomes that direction's smash attack, charging for as long as it's held. The flick + attack
+  and right-stick smashes still work instantly. Neutral attack stays an instant jab. (The cost:
+  a tilt comes out when you release, a few frames after the press.)
+- **Charge feedback:** sparks gather into the charging fighter, a rising hum, and a flash and
+  ring at full charge.
+
 ## Music, sound and presentation pass
 
 - **Music:** Pokémon Showdown's battle tracks (vendored in `public/audio/music`, ~14 MB, streamed
