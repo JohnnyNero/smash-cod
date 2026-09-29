@@ -16,6 +16,12 @@ for (const ev of ['pointerdown', 'keydown', 'touchstart']) {
   window.addEventListener(ev, () => audio.unlock(), { passive: true });
 }
 document.addEventListener('contextmenu', (e) => e.preventDefault());
+// M toggles the music anywhere (remembered).
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyM' || e.repeat) return;
+  audio.toggleMusic();
+  if (game.state === 'paused') game.ui.showPause(true, audio.musicOn);
+});
 
 let last = performance.now();
 function loop(now) {

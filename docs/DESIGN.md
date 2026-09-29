@@ -299,6 +299,25 @@ instead of running through, while rolls still cross through and aerial cross-ups
   flip. The extra clips live in `public/models/charizard_clips.json` (exported from the full
   clip set, loaded with the model).
 
+## Music, sound and presentation pass
+
+- **Music:** Pokémon Showdown's battle tracks (vendored in `public/audio/music`, ~14 MB, streamed
+  only when played) with Showdown's own loop points. SM rival theme on the menus; a random
+  trainer battle theme (XY / BW / ORAS / SM) per match, crossfading to a rival theme (XY / BW)
+  when someone is on their last stock or last Pokémon, or under 30 s on the clock. The music runs
+  through the SFX compressor so big hits duck it; it's ducked while paused and under "GAME!".
+  Toggle with **M** or the pause menu (remembered).
+- **Hit sounds:** every hit is detuned a little so strings of hits don't sound copy-pasted;
+  claws, tails and bites slice instead of thud; Grass, Ice, Fighting and Dragon hits get their
+  own layer.
+- **P1/P2 markers:** stay the same size on screen as the camera zooms, and fade to 35% when
+  they'd sit on top of the other Pokémon. Hidden on the results screen.
+- **Touch:** a taunt button (☺) next to pause.
+- **Results screen:** the panel sits on the right with a gradient backdrop; the winner's victory
+  pose is framed in the clear space on the left with the loser lying fainted behind it (no
+  more launch tumble or hit flash on the fainted model). "GAME!" is cleared when the panel
+  opens.
+
 ## Balance: attack tempo & power per Pokémon
 
 Every Pokémon used to share the same normals' frame data (only scaled for size), so small

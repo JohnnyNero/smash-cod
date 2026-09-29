@@ -24,7 +24,8 @@ export class TouchControls {
         <button data-b="attack" class="t-btn t-attack">ATTACK</button>
       </div>
       <button data-b="swap" class="t-btn t-swap">SWAP</button>
-      <button data-b="start" class="t-btn t-pause">II</button>`;
+      <button data-b="start" class="t-btn t-pause">II</button>
+      <button data-b="taunt" class="t-btn t-taunt" aria-label="Taunt">☺</button>`;
     root.appendChild(this.el);
     this.stick = { el: this.el.querySelector('[data-stick="move"]'), id: null, ox: 0, oy: 0, x: 0, y: 0 };
     this.buttons = new Map(); // touch id -> button name

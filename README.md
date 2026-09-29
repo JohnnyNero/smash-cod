@@ -41,10 +41,11 @@ working branch also deploys to GitHub Pages.
 | Shield (+ flick = roll / spot dodge; air = air dodge) | RB / LT / RT | H | , | SHIELD |
 | Grab (then direction = throw, attack = pummel) | LB, or shield + A | R | ; | GRAB |
 | Switch Pokémon (team mode; + ◀ ▲ ▶ picks who) | Y | T | L | SWAP |
-| Taunt (up roar · side glare · down cheer) | D-pad | E (+ direction) | K (+ direction) | — |
+| Taunt (up roar · side glare · down cheer) | D-pad | E (+ direction) | K (+ direction) | ☺ (+ stick) |
 | Hidden picks at team preview / after a KO | ◀ ▲ ▶ (▼ / A = stay in) | A / W / D | arrows | tap |
 | Drop through platform / fast fall | flick down | S | ↓ | flick down |
 | Pause | Start | Esc | Enter | II |
+| Music on/off | pause menu | M | M | pause menu |
 
 - **Ledges:** fall near the edge to grab it. Then **up** climbs, **jump** jumps, **attack** does a
   getup attack, **shield** rolls in, and **down** lets go.

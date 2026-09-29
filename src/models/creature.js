@@ -1195,6 +1195,14 @@ export class CreatureModel {
     }
     this.setFlash(Math.min(1, flash), flashColor);
     this.tag.visible = v.showTag;
+    if (v.showTag) {
+      // Same size on screen however far the camera pulls back; fades when the fighters overlap
+      // so it doesn't sit on top of the other Pokémon.
+      const k = v.tagK || 1;
+      this.tag.scale.set(0.6 * k, 0.45 * k, 1);
+      this.tag.position.y = this.h + 0.3 + 0.3 * k;
+      this.tag.material.opacity = damp(this.tag.material.opacity, v.tagDim ? 0.35 : 1, 10, dt);
+    }
   }
 
   dispose() {

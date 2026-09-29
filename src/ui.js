@@ -35,15 +35,16 @@ const CONTROLS = `
       <p><b>L-stick</b> move · <b>X</b> jump</p>
       <p><b>A</b> attack (+ direction) · <b>R-stick</b> smash</p>
       <p><b>B</b> special (+ direction = 4 moves)</p>
-      <p><b>RB/LT/RT</b> shield · <b>LB</b> grab · <b>Y</b> + ◀▲▶ switch</p></div>
+      <p><b>RB/LT/RT</b> shield · <b>LB</b> grab · <b>Y</b> + ◀▲▶ switch</p>
+      <p><b>D-pad</b> taunt · <b>Start</b> pause</p></div>
     <div><h4>KEYBOARD P1</h4>
       <p><b>WASD</b> move · <b>Space</b> jump</p>
       <p><b>F</b> attack · tap dir + <b>F</b> = smash</p>
-      <p><b>G</b> special · <b>H</b> shield · <b>R</b> grab · <b>T</b> switch</p></div>
+      <p><b>G</b> special · <b>H</b> shield · <b>R</b> grab · <b>T</b> switch · <b>E</b> taunt</p></div>
     <div><h4>KEYBOARD P2</h4>
       <p><b>Arrows</b> move · <b>'</b> jump</p>
       <p><b>/</b> attack · <b>.</b> special</p>
-      <p><b>,</b> shield · <b>;</b> grab · <b>L</b> switch</p></div>
+      <p><b>,</b> shield · <b>;</b> grab · <b>L</b> switch · <b>K</b> taunt</p></div>
     <div><h4>TOUCH</h4>
       <p><b>Left thumb</b> move</p>
       <p><b>ATTACK / SPECIAL</b> + stick direction</p>
@@ -422,17 +423,20 @@ export class UI {
     for (const [slot, e] of Object.entries(this.bubbles)) if (!seen.has(+slot)) e.style.display = 'none';
   }
 
-  showPause(show) {
+  showPause(show, musicOn = true) {
     this.screens.pause.classList.toggle('hidden', !show);
     if (show) {
       this.screens.pause.innerHTML = `<div class="panel"><h2>PAUSED</h2>
         <button data-action="resume">RESUME <small>START / ESC</small></button>
+        <button data-action="music">MUSIC: ${musicOn ? 'ON' : 'OFF'} <small>M</small></button>
         <button data-action="quit">QUIT TO SELECT <small>B / BACKSPACE</small></button></div>${CONTROLS}`;
     }
   }
 
   // winner: winning player's slot or null; summaries: per-player team totals.
   showResults(winner, summaries) {
+    clearTimeout(this.annTimer);
+    this.announcer.innerHTML = ''; // "GAME!" never lingers over the panel
     const s = this.screens.results;
     const w = winner === null || winner === undefined ? null : summaries[winner];
     const rows = [

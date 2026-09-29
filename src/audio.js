@@ -1,5 +1,13 @@
-// Every sound is synthesized with WebAudio, so there are no asset files to ship.
-// Positions are panned left/right by stage x.
+// Sound effects are synthesized with WebAudio; cries and music are vendored MP3s from Pokémon
+// Showdown. Positions are panned left/right by stage x.
+
+// Showdown's battle music with its loop points (ms), from play.pokemonshowdown.com/js/battle.js.
+const TRACKS = {
+  menu: [['sm-rival', 11389, 62158]],
+  battle: [['xy-trainer', 7802, 82469], ['bw-trainer', 14629, 110109], ['oras-trainer', 13579, 91548], ['sm-trainer', 8323, 89230]],
+  final: [['xy-rival', 7802, 58634], ['bw-rival', 19180, 57373]],
+};
+const MUSIC_KEY = 'showdown-smash-music';
 
 export class Audio {
   constructor() {
@@ -7,6 +15,82 @@ export class Audio {
     this.volume = 0.55;
     this.voiceEnabled = true;
     this.quiet = false;
+    this.musicOn = true;
+    try { this.musicOn = localStorage.getItem(MUSIC_KEY) !== 'off'; } catch (e) { /* storage blocked */ }
+    this.musicVol = 0.42;
+    this.decks = []; // two media elements to crossfade between
+    this.wantKind = null;
+    this.duck = 1;
+  }
+
+  // ---- music: streamed <audio> elements routed through WebAudio (so volume works on iOS and
+  // the SFX compressor ducks the music under big hits).
+  setMusic(kind, pick) {
+    if (this.wantKind === kind && (pick === undefined || pick === this.wantPick)) return;
+    this.wantKind = kind;
+    this.wantPick = pick;
+    this.startTrack();
+  }
+
+  startTrack() {
+    if (!this.ctx) return; // starts once unlocked
+    const kind = this.musicOn ? this.wantKind : null;
+    const list = kind ? TRACKS[kind] : null;
+    const tr = list ? list[(this.wantPick ?? 0) % list.length] : null;
+    const cur = this.decks.find((d) => d.active);
+    if (cur && tr && cur.track[0] === tr[0]) return;
+    for (const d of this.decks) {
+      if (!d.active) continue;
+      d.active = false;
+      d.gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.35);
+      const el = d.el;
+      setTimeout(() => { if (!d.active) el.pause(); }, 1600);
+    }
+    if (!tr) return;
+    let d = this.decks.find((x) => !x.active && x.el.paused);
+    if (!d) {
+      const el = document.createElement('audio');
+      el.preload = 'auto';
+      el.crossOrigin = 'anonymous';
+      const gain = this.ctx.createGain();
+      gain.gain.value = 0;
+      try { this.ctx.createMediaElementSource(el).connect(gain); } catch (e) { return; }
+      gain.connect(this.musicBus);
+      d = { el, gain };
+      this.decks.push(d);
+    }
+    d.active = true;
+    d.track = tr;
+    d.el.src = `./audio/music/${tr[0]}.mp3`;
+    d.el.currentTime = 0;
+    d.gain.gain.cancelScheduledValues(this.ctx.currentTime);
+    d.gain.gain.setValueAtTime(0, this.ctx.currentTime);
+    d.gain.gain.setTargetAtTime(1, this.ctx.currentTime, 0.4);
+    d.el.play().catch(() => {});
+  }
+
+  // Called every frame: loop at the track's loop points, and duck while paused.
+  updateMusic(duck = 1) {
+    if (!this.musicBus) return;
+    if (duck !== this.duck) {
+      this.duck = duck;
+      this.musicBus.gain.setTargetAtTime(this.musicVol * duck, this.ctx.currentTime, 0.25);
+    }
+    for (const d of this.decks) {
+      if (!d.active) continue;
+      const [, a, b] = d.track;
+      if (d.el.currentTime * 1000 >= b || d.el.ended) {
+        d.el.currentTime = a / 1000;
+        if (d.el.paused) d.el.play().catch(() => {});
+      }
+    }
+  }
+
+  toggleMusic() {
+    this.musicOn = !this.musicOn;
+    try { localStorage.setItem(MUSIC_KEY, this.musicOn ? 'on' : 'off'); } catch (e) { /* storage blocked */ }
+    this.startTrack();
+    return this.musicOn;
   }
 
   unlock() {
@@ -24,6 +108,10 @@ export class Audio {
     comp.ratio.value = 6;
     this.master.connect(comp);
     comp.connect(this.ctx.destination);
+    this.musicBus = this.ctx.createGain();
+    this.musicBus.gain.value = this.musicVol;
+    this.musicBus.connect(comp);
+    this.startTrack();
     const len = this.ctx.sampleRate;
     this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
     const data = this.noiseBuf.getChannelData(0);
@@ -124,14 +212,22 @@ export class Audio {
   }
 
   // Impact scaled by damage, with a type-flavoured layer.
-  hit(x, dmg, type) {
+  hit(x, dmg, type, { sharp = false } = {}) {
     // Layered like fighting-game hits: a sharp crack, a pitch-dropping body thump, a crunch,
-    // and for big hits a sub boom with an air tail. All scale with damage.
+    // and for big hits a sub boom with an air tail. All scale with damage; every hit is
+    // detuned a little so repeated hits don't sound copy-pasted, and slashing moves (claws,
+    // tails, bites) swap the crunch for a bright slice.
     const k = Math.min(1, dmg / 20);
     const g = 0.35 + 0.6 * k;
-    this.noise(0.025, { type: 'highpass', freq: 3000, gain: 0.5 * g, attack: 0.001, x });
-    this.tone(220 - 90 * k, 0.09 + 0.18 * k, { type: 'sine', freqEnd: 45, gain: 0.8 * g, attack: 0.001, x });
-    this.noise(0.06 + 0.1 * k, { type: 'bandpass', freq: 1800 - 900 * k, freqEnd: 300, q: 1.2, gain: 0.5 * g, x });
+    const j = 0.9 + Math.random() * 0.2;
+    this.noise(0.025, { type: 'highpass', freq: 3000 * j, gain: 0.5 * g, attack: 0.001, x });
+    this.tone((220 - 90 * k) * j, 0.09 + 0.18 * k, { type: 'sine', freqEnd: 45, gain: 0.8 * g, attack: 0.001, x });
+    if (sharp) {
+      this.noise(0.09 + 0.06 * k, { type: 'bandpass', freq: 5200 * j, freqEnd: 1400, q: 2.5, gain: 0.45 * g, x });
+      this.tone(2400 * j, 0.05, { type: 'sawtooth', freqEnd: 900, gain: 0.05 * g, x });
+    } else {
+      this.noise(0.06 + 0.1 * k, { type: 'bandpass', freq: (1800 - 900 * k) * j, freqEnd: 300, q: 1.2, gain: 0.5 * g, x });
+    }
     if (dmg >= 10) {
       this.tone(70, 0.4 + 0.3 * k, { type: 'sine', freqEnd: 30, gain: 0.7 * k, x });
       this.noise(0.35, { freq: 1200, freqEnd: 150, gain: 0.3 * k, delay: 0.01, x });
@@ -141,6 +237,10 @@ export class Audio {
     if (type === 'Fire') this.noise(0.25, { type: 'bandpass', freq: 800, freqEnd: 300, gain: 0.2, x });
     if (type === 'Water') this.noise(0.2, { type: 'lowpass', freq: 1500, freqEnd: 400, gain: 0.25, x });
     if (type === 'Ghost' || type === 'Poison') this.tone(200, 0.2, { type: 'sine', freqEnd: 90, gain: 0.15, x });
+    if (type === 'Grass') this.noise(0.18, { type: 'highpass', freq: 2500, freqEnd: 6000, gain: 0.12, x });
+    if (type === 'Ice') this.tone(2600 * j, 0.18, { type: 'triangle', freqEnd: 3100, gain: 0.08, x });
+    if (type === 'Fighting') this.noise(0.04, { type: 'lowpass', freq: 600, gain: 0.4 * g, delay: 0.015, x });
+    if (type === 'Dragon') this.tone(110 * j, 0.3, { type: 'sawtooth', freqEnd: 60, gain: 0.1, x });
   }
 
   special(x, type) {

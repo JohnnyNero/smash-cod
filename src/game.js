@@ -437,6 +437,7 @@ export class Game {
   startMatch(demo) {
     this.clearMatch();
     this.demo = demo;
+    this.musicPick = Math.floor(Math.random() * 64);
     this.setupPlayers(demo);
     this.pending = [{}, {}];
     if (this.teamMode) {
@@ -759,7 +760,8 @@ export class Game {
         this.audio.uiConfirm();
       }
     } else if (s === 'paused') {
-      if (a.type === 'resume') this.setPaused(false);
+      if (a.type === 'music') { this.audio.toggleMusic(); this.ui.showPause(true, this.audio.musicOn); }
+      else if (a.type === 'resume') this.setPaused(false);
       else if (a.type === 'quit') this.goSelect();
     } else if (s === 'results') {
       if (a.type === 'rematch') this.startMatch(false);
@@ -778,7 +780,7 @@ export class Game {
     } else {
       this.state = this.pausedFrom || 'playing';
     }
-    this.ui.showPause(p);
+    this.ui.showPause(p, this.audio.musicOn);
     this.touch.setVisible(!p && this.players.some((x) => x.device === 'touch'));
     this.audio.ui();
   }
@@ -877,11 +879,36 @@ export class Game {
         break;
     }
 
+    this.updateMusic();
     this.stage.update(this.realTime, dt);
     this.updateCamera(dt);
     this.adaptQuality(dt);
     if (this.composer) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
+  }
+
+  // Menu music on the menus; a random battle track in battle, switching to a rival theme
+  // when someone is down to their last stock / last Pokémon (or the clock is nearly out).
+  updateMusic() {
+    const s = this.state;
+    let kind = 'menu';
+    let duck = 1;
+    if (s === 'lab') kind = null;
+    else if (['countdown', 'playing', 'paused', 'kopick', 'gameover'].includes(s) && !this.demo) {
+      kind = this.lastStand() ? 'final' : 'battle';
+      if (s === 'paused') duck = 0.35;
+      if (s === 'gameover') duck = 0.5;
+    }
+    this.audio.setMusic(kind, this.musicPick || 0);
+    this.audio.updateMusic(duck);
+  }
+
+  lastStand() {
+    if (!this.players || !this.fighters.length) return false;
+    if (this.suddenDeath) return true;
+    if (this.teamMode) return this.players.some((p) => p.team.length > 1 && this.aliveIndexes(p).length === 1);
+    if (this.mode === 'TIME') return this.timeLeft < 30;
+    return this.settings.stocks > 1 && this.fighters.some((f) => f.stocks === 1);
   }
 
   // Dynamic resolution: if frames run long, render fewer pixels (then drop bloom) until the
@@ -1178,7 +1205,7 @@ export class Game {
       this.shake(0.08 + res.launch * 0.018 + (superEff ? 0.25 : 0) + (smash ? 0.15 : 0));
       if (heavy) this.cam.punch = Math.max(this.cam.punch || 0, smash ? 0.07 : 0.04);
       if (!this.demo && this.state === 'playing' && res.launch > 8 && this.predictKO(d)) this.finishHit(d, hx, hy);
-      this.audio.hit(hx, dmg.damage, move.type);
+      this.audio.hit(hx, dmg.damage, move.type, { sharp: /claw|tail|bite|swipe|slash|cut/i.test(`${move.anim} ${move.name || ''}`) });
       if (heavy) this.audio.launch(hx, res.launch);
       if (!this.demo && move.type && dmg.eff !== 1 && dmg.damage >= 2.5) {
         if (superEff) {
@@ -1541,7 +1568,10 @@ export class Game {
       taunt: f.state === 'taunt' ? f.taunt : null,
       airJump: !f.grounded && f.airJumps < f.st.airJumps,
       faint: !!f.faintPose,
-      showTag: !this.demo && !f.faintPose,
+      showTag: !this.demo && !f.faintPose && this.state !== 'results',
+      tagK: clamp((this.cam.dist || 14) / 15, 0.6, 2.2),
+      tagDim: this.fighters.some((o) => o !== f && o.active && Math.abs(o.pos.x - f.pos.x) < (o.w + f.w) * 0.6
+        && f.pos.y + f.h + 0.6 > o.pos.y && f.pos.y + f.h < o.pos.y + o.h + 0.8),
     };
   }
 
@@ -1625,7 +1655,11 @@ export class Game {
     const m = loser.model;
     m.root.visible = true;
     m.root.position.set(x, champ.grounded ? champ.pos.y : S.top, -1.1);
-    m.update(this.fighterView(loser), dt);
+    // Lying still in the faint clip: none of the launch tumble, hit flash or respawn blink.
+    m.update({
+      ...this.fighterView(loser), state: 'ground', grounded: true, vx: 0, vy: 0, flash: 0, invuln: false,
+      tumble: false, shake: 0, flip: -1, dodge: null, intangible: false, airJump: false, zipDir: null,
+    }, dt);
   }
 
   // Fighters off the edge of the screen (but not KO'd) show as a bubble at the edge.
@@ -1712,9 +1746,15 @@ export class Game {
       const champ = this.state === 'results' && this.winner !== null && this.winner !== undefined ? this.fighters[this.winner] : null;
       if (champ && champ.active) {
         // Results: frame the winner's victory pose beside the results panel.
-        tx = champ.pos.x + (this.camera.aspect > 1.2 ? 3 : 0);
-        ty = champ.pos.y + champ.h * 0.6;
+        // Centre the winner in the clear space left of the results panel.
         td = 8.5;
+        const halfW = td * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * this.camera.aspect;
+        const panel = document.querySelector('.results .panel');
+        const r = panel && panel.getBoundingClientRect();
+        const W = window.innerWidth || 1;
+        const ndc = r && r.width && r.left > W * 0.25 ? (r.left / 2 / W) * 2 - 1 : 0;
+        tx = champ.pos.x - 0.4 - ndc * halfW; // (the fainted loser lies just behind, to the left)
+        ty = champ.pos.y + champ.h * 0.6;
       } else if (this.fz) {
         // Finishing blow: zoom onto the impact.
         tx = this.fz.x;
