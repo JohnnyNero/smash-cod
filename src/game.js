@@ -18,6 +18,7 @@ import { InkPass } from './ink.js';
 import { buildStage } from './stage.js';
 import { Effects } from './effects.js';
 import { STATUS } from './status.js';
+import { ShowdownTurns } from './showdown.js';
 import { CpuBrain } from './ai.js';
 import { UI } from './ui.js';
 import { TouchControls, isTouchDevice } from './touch.js';
@@ -31,6 +32,9 @@ const SWITCH_COOLDOWN = 300; // frames between voluntary switches
 const PICK_TIME = 6; // seconds for the hidden picks after a KO
 const PREVIEW_TIME = 15; // seconds to pick a lead at team preview
 // Hidden picks: ◀ / ▲ / ▶ choose team member 1 / 2 / 3 (the mapping is public, the choice is not).
+const CALLED_MULT = 1.25; // Showdown mode: the move you called this turn hits harder
+const WEATHER_SECONDS = 25; // Sunny Day / Rain Dance outside Showdown mode
+const WEATHER_TURNS = 3; // ...and in Showdown mode (Showdown: 5 turns)
 const pickFromNav = (d) => (d.nav.left ? 0 : d.nav.up ? 1 : d.nav.right ? 2 : -1);
 
 // When each move actually connects, as fractions of its length, so animations can time their
@@ -68,6 +72,7 @@ export class Game {
     this.basePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
     this.fixedQuality = params.has('quality');
     this.dyn = { scale: 1, max: 1, avg: 1 / 60, t: 0 };
+    this.sd = new ShowdownTurns(this);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = true;
@@ -117,7 +122,9 @@ export class Game {
   }
 
   get mode() { return RULES.modes[this.settings.mode]; }
-  get teamMode() { return this.mode === 'TEAM' && !this.demo; }
+  get teamMode() { return (this.mode === 'TEAM' || this.mode === 'SHOWDOWN') && !this.demo; }
+  get teamRules() { return this.mode === 'TEAM' || this.mode === 'SHOWDOWN'; }
+  get showdownMode() { return this.mode === 'SHOWDOWN' && !this.demo; }
 
   newSlot(i) {
     return { device: null, team: loadTeam(i), row: 0, ready: false, edit: -1 };
@@ -221,13 +228,13 @@ export class Game {
   rowsFor(i) {
     const s = this.slots[i];
     if (s.edit >= 0) return [...SLOTS.map((k) => 'mv:' + k), 'ab', 'done'];
-    const mons = this.mode === 'TEAM' ? [0, 1, 2] : [0];
-    const rules = i === 0 ? (this.mode === 'TEAM' ? ['mode', 'cpu'] : ['mode', 'limit', 'cpu']) : [];
+    const mons = this.teamRules ? [0, 1, 2] : [0];
+    const rules = i === 0 ? (this.teamRules ? ['mode', 'cpu'] : ['mode', 'limit', 'cpu']) : [];
     return [...mons.map((k) => 'mon:' + k), ...rules, 'ready'];
   }
 
   rowLabel(key) {
-    if (key.startsWith('mon:')) return this.mode === 'TEAM' ? `POKÉMON ${+key.slice(4) + 1}` : 'POKÉMON';
+    if (key.startsWith('mon:')) return this.teamRules ? `POKÉMON ${+key.slice(4) + 1}` : 'POKÉMON';
     if (key.startsWith('mv:')) return { neutral: 'B', side: '→B', up: '↑B', down: '↓B' }[key.slice(3)];
     return { mode: 'MODE', limit: 'LIMIT', cpu: 'CPU', ab: 'ABILITY', done: '', ready: '' }[key];
   }
@@ -318,16 +325,17 @@ export class Game {
       ready: s.ready,
       edit: s.edit,
       focus: this.focusIndex(s, i),
-      team: this.mode === 'TEAM' ? s.team : s.team.slice(0, 1),
+      team: this.teamRules ? s.team : s.team.slice(0, 1),
       color: PLAYER_COLORS[i].css,
       rows: this.rowsFor(i).map((key) => ({ key, label: this.rowLabel(key), value: this.rowValue(key, s) })),
     }));
     const full = this.canStart();
     const allReady = full && this.slots.every((s) => s.ready);
-    const rules = this.mode === 'TEAM' ? 'TEAM BATTLE · 3v3' : `${this.mode} · ${this.rowValue('limit')}`;
+    const rules = this.mode === 'SHOWDOWN' ? 'SHOWDOWN · 3v3 · 15 s TURNS' : this.mode === 'TEAM' ? 'TEAM BATTLE · 3v3' : `${this.mode} · ${this.rowValue('limit')}`;
     this.ui.renderSelect({
       slots,
       mode: this.mode,
+      teamRules: this.teamRules,
       cpuName: RULES.cpu[st.cpu],
       rulesText: `${rules} · STAGE: PLATEAU STADIUM`,
       canStart: full && this.slots[0].ready,
@@ -430,12 +438,12 @@ export class Game {
       const slot = this.slots[i];
       const device = demo ? 'cpu' : slot.device;
       const isCpu = device === 'cpu';
-      const defs = demo ? [member(SPECIES_LIST[rand(SPECIES_LIST.length)].id)] : this.mode === 'TEAM' ? slot.team : slot.team.slice(0, 1);
+      const defs = demo ? [member(SPECIES_LIST[rand(SPECIES_LIST.length)].id)] : this.teamRules ? slot.team : slot.team.slice(0, 1);
       const brain = isCpu ? new CpuBrain(demo ? 2 : st.cpu) : null;
       const team = defs.map((m) => {
         const f = new Fighter(this, i, SPECIES[m.species], PLAYER_COLORS[i], m.moves);
         f.ability = m.ability || null;
-        Object.assign(f, { device, isCpu, brain, stocks: this.mode === 'TEAM' && !demo ? 1 : st.stocks, benched: true });
+        Object.assign(f, { device, isCpu, brain, stocks: this.teamRules && !demo ? 1 : st.stocks, benched: true });
         f.model = new CreatureModel({ species: f.sp, colors: f.colors, label: `P${i + 1}` });
         f.model.root.visible = false;
         this.scene.add(f.model.root);
@@ -515,10 +523,13 @@ export class Game {
       const [a, b] = this.fighters;
       this.ui.announce(`${a.sp.name.toUpperCase()} <small>vs</small> ${b.sp.name.toUpperCase()}`, 'matchup', 1500);
     }
+    if (this.showdownMode) this.sd.begin(); // Showdown mode: straight into turn 1's commands
   }
 
   clearMatch() {
     this.fz = null;
+    this.weather = null;
+    this.stage.setWeather(null);
     this.ui.clearLog();
     this.timeScale = 1;
     if (this.ui.updateBubbles) this.ui.updateBubbles([]);
@@ -679,6 +690,7 @@ export class Game {
     this.state = 'playing';
     this.canAct = true;
     this.touch.setVisible(this.players.some((p) => p.device === 'touch'));
+    if (this.showdownMode) this.sd.startPick(); // a faint ends the turn: next turn's commands
   }
 
   // CPU lead: best average matchup into the opponent's team.
@@ -771,6 +783,9 @@ export class Game {
         k.picks[a.slot] = idx;
         this.audio.uiConfirm();
       }
+    } else if (s === 'turnpick' && a.type === 'tpick') {
+      const p = this.players[a.slot];
+      if (p && !p.isCpu) this.sd.choose(a.slot, +a.row);
     } else if (s === 'paused') {
       if (a.type === 'music') { this.audio.toggleMusic(); this.ui.showPause(true, this.audio.musicOn); }
       else if (a.type === 'resume') this.setPaused(false);
@@ -860,6 +875,14 @@ export class Game {
         this.updateKOPick(dt);
         this.updateVisuals(dt);
         break;
+      case 'turnpick':
+        this.sd.updatePick(dt);
+        if (this.state === 'turnpick') this.updateVisuals(0);
+        break;
+      case 'turnresolve':
+        this.sd.updateResolve(dt);
+        this.updateVisuals(dt);
+        break;
       case 'paused': {
         const ds = devs();
         if (ds.some((d) => d.pressed.start)) this.setPaused(false);
@@ -906,7 +929,7 @@ export class Game {
     let kind = 'menu';
     let duck = 1;
     if (s === 'lab') kind = null;
-    else if (['countdown', 'playing', 'paused', 'kopick', 'gameover'].includes(s) && !this.demo) {
+    else if (['countdown', 'playing', 'paused', 'kopick', 'gameover', 'turnpick', 'turnresolve'].includes(s) && !this.demo) {
       kind = this.lastStand() ? 'final' : 'battle';
       if (s === 'paused') duck = 0.35;
       if (s === 'gameover') duck = 0.5;
@@ -964,7 +987,7 @@ export class Game {
       this.step();
       this.acc -= SIM_DT;
       steps++;
-      if (this.state === 'kopick') { this.acc = 0; break; } // a KO paused the battle for picks
+      if (this.state === 'kopick' || this.state === 'turnpick') { this.acc = 0; break; } // paused for picks
     }
     if (steps === 5) this.acc = 0;
     this.updateVisuals(dt * this.timeScale);
@@ -995,11 +1018,13 @@ export class Game {
       }
     });
     for (const f of this.fighters) if (f.active && f.charging) this.chargeFx(f);
+    this.stepWeather();
     this.bodyPush();
     this.resolveHits();
     this.spawnSwooshes();
     this.updateProjectiles(SIM_DT);
     if (this.teamMode) this.benchHeal();
+    if (this.state === 'playing' && this.showdownMode) this.sd.step(SIM_DT);
     if (this.state === 'playing' && this.mode === 'TIME' && !this.suddenDeath && !this.demo) {
       this.timeLeft -= SIM_DT;
       if (this.timeLeft <= 0) this.timeUp();
@@ -1166,7 +1191,8 @@ export class Game {
   applyHit(a, d, hb, move, base, dirSign, hx, hy) {
     const kind = hb.speed !== undefined ? 'projectile' : move.aerial ? 'aerial' : move.smash ? 'smash' : 'ground';
     const stale = a.staleMult ? a.staleMult(move) : 1;
-    const dmg = damageFor(a, d, base * stale, move);
+    const called = move.special && a.called && a.called === move.slot ? CALLED_MULT : 1; // Showdown mode's called move
+    const dmg = damageFor(a, d, base * stale * called, move);
     const grassImmune = d.sp.types.includes('Grass') && (move.powder || hb.effect === 'seed');
     // Lightning Rod: Electric moves are drawn in and absorbed: +1 Sp. Atk (once per move use).
     if (d.ability === 'lightningrod' && move.type === 'Electric' && move.special) {
@@ -1191,17 +1217,17 @@ export class Game {
         return { result: 'blocked' };
       }
       const ok = d.applyStatus(hb.effect, a);
-      if (ok) {
+      if (ok && (hb.effect === 'sleep' || hb.effect === 'seed')) {
         const text = hb.effect === 'sleep' ? 'FELL ASLEEP!' : 'SEEDED!';
         this.effects.callout(d.pos.x, d.pos.y + d.h + 0.7, text, hb.effect === 'sleep' ? 0xc8b8ff : 0x8ee060);
         this.audio.status(hx, hb.effect);
-        a.stats.hits++;
       }
+      if (ok) a.stats.hits++;
       return { result: ok ? 'status' : 'miss' };
     }
 
     const res = d.takeHit({
-      damage: dmg.damage, kb: hb.kb * (0.5 + 0.5 * stale), grow: hb.grow, ang: hb.ang, dirSign,
+      damage: dmg.damage, kb: hb.kb * (0.5 + 0.5 * stale) * Math.sqrt(called), grow: hb.grow, ang: hb.ang, dirSign,
       attacker: a, source: move.name || move.id, kind,
     });
     if ((res.result === 'hit' || res.result === 'blocked') && a.pushStale) a.pushStale(move);
@@ -1395,7 +1421,7 @@ export class Game {
       a.disabled = { slot: move.slot, frames: DISABLE_FRAMES };
       this.onAbility(d);
       if (!this.demo) {
-        this.ui.log(`${a.sp.name}'s ${move.name} was disabled!`);
+        this.ui.log(`${this.who(a)}'s ${move.name} was disabled!`);
         this.effects.callout(a.pos.x, a.pos.y + a.h + 0.7, 'DISABLED!', 0x9a6ad0);
       }
     }
@@ -1405,8 +1431,73 @@ export class Game {
   onAbility(f) {
     const ab = ABILITIES[f.ability];
     if (!ab || this.demo) return;
-    this.ui.log(`[${f.sp.name}'s ${ab.name}]`, 'ability');
+    this.ui.log(`[${this.who(f)}'s ${ab.name}]`, 'ability');
     this.ui.popup(f.slot, ab.name.toUpperCase(), 'good');
+  }
+
+  // A Pokémon's name for the battle log, tagged with its player's colour ("P1 Charizard").
+  who(f) {
+    return `<b style="color:${f.colors.css}">P${f.slot + 1}</b> ${f.sp.name}`;
+  }
+
+  // ---- weather (Sunny Day / Rain Dance). Lasts WEATHER_SECONDS, or a few turns in Showdown mode.
+  setWeather(id, by) {
+    const name = by ? this.who(by) : '';
+    if (this.weather && this.weather.id === id) {
+      if (!this.demo) this.ui.log(`${name} used ${id === 'sun' ? 'Sunny Day' : 'Rain Dance'}! But it failed!`);
+      return false;
+    }
+    this.weather = { id, t: WEATHER_SECONDS, turns: WEATHER_TURNS };
+    this.stage.setWeather(id);
+    if (!this.demo) {
+      this.ui.log(id === 'sun' ? 'The sunlight turned harsh!' : 'It started to rain!');
+      this.ui.announce(id === 'sun' ? '☀ HARSH SUNLIGHT' : '☂ RAIN', 'weather', 1400);
+    }
+    this.audio.status(by ? by.pos.x : 0, id === 'sun' ? 'brn' : 'psn');
+    for (const f of this.fighters) f.refreshStats(); // Chlorophyll
+    // Sun thaws anyone frozen.
+    if (id === 'sun') for (const f of this.fighters) if (f.state === 'frozen') f.thaw();
+    return true;
+  }
+
+  endWeather() {
+    if (!this.weather) return;
+    if (!this.demo) this.ui.log(this.weather.id === 'sun' ? 'The sunlight faded.' : 'The rain stopped.');
+    this.weather = null;
+    this.stage.setWeather(null);
+    for (const f of this.fighters) f.refreshStats();
+  }
+
+  // Per sim step: timed weather, and the weather abilities (Solar Power, Rain Dish).
+  stepWeather() {
+    const w = this.weather;
+    if (!w) return;
+    if (!this.showdownMode) {
+      w.t -= SIM_DT;
+      if (w.t <= 0) { this.endWeather(); return; }
+    }
+    if (Math.round(this.time * 60) % 60 !== 0) return;
+    for (const f of this.fighters) {
+      if (!f.active || f.dead || f.onRevival) continue;
+      if (w.id === 'sun' && f.ability === 'solarpower') f.percent = Math.min(999, f.percent + 0.6);
+      if (w.id === 'rain' && f.ability === 'raindish' && f.percent > 0) f.percent = Math.max(0, f.percent - 0.6);
+    }
+  }
+
+  weatherFx(dt) {
+    const w = this.weather;
+    if (!w || dt <= 0) return;
+    const c = this.cam;
+    const halfW = c.dist * 0.45 * (this.camera.aspect || 1.7);
+    if (w.id === 'rain') {
+      for (let i = 0; i < 7; i++) {
+        this.effects.add(2, c.x + (Math.random() - 0.5) * halfW * 2, c.y + c.dist * 0.4 + Math.random() * 4, (Math.random() - 0.3) * 4,
+          -3, -34, 0, 0.9, 0.035, 0x9ab8e8, {});
+      }
+    } else if (Math.random() < 0.25) {
+      this.effects.add(0, c.x + (Math.random() - 0.5) * halfW * 2, c.y + (Math.random() - 0.3) * c.dist * 0.5, (Math.random() - 0.5) * 3,
+        0.2, -0.3, 0, 2.5, 0.05, 0xffe8a0, { drag: 0.5 });
+    }
   }
 
   // Status callouts in Showdown's words ("Pikachu is paralyzed! It may be unable to move!").
@@ -1416,7 +1507,7 @@ export class Game {
     const col = id === 'confusion' ? 0xd8a0ff : parseInt(STATUS[id].color.slice(1), 16);
     if (!this.demo) {
       this.effects.callout(f.pos.x, f.pos.y + f.h + 0.7, id === 'confusion' ? 'CONFUSED!' : `${STATUS[id].name}!`, col);
-      this.ui.log(id === 'confusion' ? `${name} became confused!` : `${name} ${STATUS[id].text}`);
+      this.ui.log(id === 'confusion' ? `${this.who(f)} became confused!` : `${this.who(f)} ${STATUS[id].text}`);
     }
     this.effects.ring(c.x, c.y, col, 1.8, 0.35);
     this.audio.status(f.pos.x, id);
@@ -1437,7 +1528,7 @@ export class Game {
     this.effects.sparks(c.x, c.y, 0, 0, 0xfff27a, 14, 6);
     if (!this.demo) {
       this.effects.callout(f.pos.x, f.pos.y + f.h + 0.7, "CAN'T MOVE!", 0xf8d030);
-      this.ui.log(`${f.sp.name} is paralyzed! It can't move!`);
+      this.ui.log(`${this.who(f)} is paralyzed! It can't move!`);
     }
     this.audio.buzz(f.pos.x, 0.35);
   }
@@ -1446,7 +1537,7 @@ export class Game {
     const c = f.center;
     this.effects.streaks(c.x, c.y, Math.PI / 2, 0xd8f6ff, 12, 9, Math.PI);
     this.audio.freeze(f.pos.x);
-    if (!this.demo) this.ui.log(`${f.sp.name} thawed out!`);
+    if (!this.demo) this.ui.log(`${this.who(f)} thawed out!`);
   }
 
   // Charging a smash: sparks gather into the fighter, a rising hum, and a flash at full charge.
@@ -1818,6 +1909,7 @@ export class Game {
       }
     });
     this.updateFaintPose(dt);
+    this.weatherFx(dt);
     for (const pr of this.projectiles) {
       const [x, y] = lerpPos(pr.px, pr.py, pr.x, pr.y);
       pr.mesh.position.set(x, y, 0);
@@ -1833,6 +1925,9 @@ export class Game {
     this.effects.update(dt);
     if (!this.demo) this.updateBubbles();
     if (!this.demo && this.fighters.length) this.ui.updateHUD(this.players, this.settings, this.timeLeft, this.teamMode);
+    if (!this.demo && this.fighters.length) {
+      this.ui.updateField(this.showdownMode ? { turn: this.sd.n, t: this.state === 'playing' ? this.sd.t : null } : null, this.weather);
+    }
   }
 
   // Results: the beaten Pokémon lies fainted just behind the winner's victory pose.

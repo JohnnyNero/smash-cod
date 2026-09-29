@@ -8,6 +8,9 @@ import { stageMult } from './data/pokemon.js';
 import { BRN_PHYSICAL } from './status.js';
 import { ABILITIES, PINCH_AT, PINCH_MULT } from './abilities.js';
 
+export const WEATHER_UP = 1.3;
+export const WEATHER_DOWN = 0.7;
+
 // Showdown multiplier (4, 2, 1, 0.5, 0.25 or 0) for a move type against a defender's types.
 export function typeEffectiveness(type, defTypes) {
   const row = DEX.typechart[type];
@@ -45,8 +48,14 @@ export function damageFor(attacker, defender, base, move) {
   // Blaze / Torrent / Overgrow: that type hits harder once the user is "in a pinch".
   const ab = ABILITIES[attacker.ability];
   const pinch = ab && ab.pinch && type === ab.pinch && attacker.percent >= PINCH_AT ? PINCH_MULT : 1;
+  // Weather: sun powers Fire and weakens Water, rain the reverse (Showdown 1.5x / 0.5x, softened).
+  const w = attacker.game && attacker.game.weather && attacker.game.weather.id;
+  let weather = 1;
+  if (w === 'sun') weather = type === 'Fire' ? WEATHER_UP : type === 'Water' ? WEATHER_DOWN : 1;
+  if (w === 'rain') weather = type === 'Water' ? WEATHER_UP : type === 'Fire' ? WEATHER_DOWN : 1;
+  if (w === 'sun' && special && attacker.ability === 'solarpower') weather *= 1.3;
   // Burned attackers hit weaker with physical moves (Showdown halves Attack; softened).
   const burn = !special && attacker.status && attacker.status.id === 'brn' ? BRN_PHYSICAL : 1;
   const aura = attacker.sp.aura ? 1 + Math.min(0.25, attacker.percent / 480) : 1; // Lucario: up to +25% at 120%
-  return { damage: base * statMult * stab * effMultiplier(eff) * aura * burn * pinch, eff, stab: stab > 1, pinch: pinch > 1 };
+  return { damage: base * statMult * stab * effMultiplier(eff) * aura * burn * pinch * weather, eff, stab: stab > 1, pinch: pinch > 1 };
 }

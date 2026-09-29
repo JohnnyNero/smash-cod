@@ -201,6 +201,24 @@ export const SPECIALS = {
   },
 };
 
+// --- Status and field moves (any Pokémon that learns them in Showdown)
+Object.assign(SPECIALS, {
+  thunderwave: {
+    anim: 'cast', total: 34, landLag: 10,
+    events: [{ f: 11, do: 'projectile', proj: { speed: 12, life: 0.8, r: 0.35, dmg: 0, kb: 0, grow: 0, kbAng: 0, visual: 'bolt', color: 0xfff27a, effect: 'par' } }],
+  },
+  willowisp: {
+    anim: 'cast', total: 38, landLag: 10,
+    events: [{ f: 12, do: 'projectile', proj: { speed: 7, life: 1.5, r: 0.4, dmg: 0, kb: 0, grow: 0, kbAng: 0, visual: 'flame', color: 0x7a6aff, effect: 'brn' } }],
+  },
+  toxic: {
+    anim: 'cast', total: 38, landLag: 10,
+    events: [{ f: 12, do: 'projectile', proj: { speed: 10, ang: 25, gravity: 14, life: 1.4, r: 0.35, dmg: 0, kb: 0, grow: 0, kbAng: 0, visual: 'sludge', color: 0x8a2ab0, effect: 'tox' } }],
+  },
+  sunnyday: { anim: 'setup', total: 40, events: [{ f: 22, do: 'weather', weather: 'sun' }] },
+  raindance: { anim: 'setup', total: 40, events: [{ f: 22, do: 'weather', weather: 'rain' }] },
+});
+
 // What a special slot turns into when its PP runs out (just like Showdown).
 export const STRUGGLE = {
   name: 'Struggle', type: '???', cat: 'physical', power: 50, pp: Infinity,

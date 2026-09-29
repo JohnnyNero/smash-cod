@@ -8,7 +8,9 @@
 //   steadfast     launched hard (tumble): +1 Speed
 //   innerfocus    weak hits (under 6%) don't interrupt its attacks (it still takes the %)
 //
-// The weather abilities (Solar Power, Rain Dish, Chlorophyll) join once weather exists.
+//   solarpower    in sun: specials 1.3x, loses 0.6% a second
+//   raindish      in rain: heals 0.6% a second
+//   chlorophyll   in sun: 1.5x run/air speed
 
 export const ABILITIES = {
   static: { name: 'Static', desc: 'Contact may paralyze the attacker (30%).' },
@@ -19,6 +21,9 @@ export const ABILITIES = {
   cursedbody: { name: 'Cursed Body', desc: 'Specials that hit it may be disabled (30%, 4 s).' },
   steadfast: { name: 'Steadfast', desc: '+1 Speed each time it is launched.' },
   innerfocus: { name: 'Inner Focus', desc: 'Weak hits (under 6%) do not interrupt its attacks.' },
+  solarpower: { name: 'Solar Power', desc: 'In sun: special moves 1.3x, but it takes 0.6% a second.' },
+  raindish: { name: 'Rain Dish', desc: 'In rain: heals 0.6% a second.' },
+  chlorophyll: { name: 'Chlorophyll', desc: 'In sun: 1.5x speed.' },
 };
 
 export const PINCH_AT = 100; // % from which Blaze/Torrent/Overgrow kick in (Showdown: 1/3 HP)

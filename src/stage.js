@@ -182,7 +182,8 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
   scene.add(mesh(new THREE.CircleGeometry(26, 32), new THREE.MeshBasicMaterial({ color: 0xffd08a, fog: false, toneMapped: false }), 70, 22, -420, false));
 
   // Lights
-  scene.add(new THREE.HemisphereLight(0xb9c6ff, 0x6a4a34, 1.15));
+  const hemi = new THREE.HemisphereLight(0xb9c6ff, 0x6a4a34, 1.15);
+  scene.add(hemi);
   const key = new THREE.DirectionalLight(0xffd6a8, 2.5);
   key.position.set(-12, 22, 14);
   key.castShadow = true;
@@ -423,7 +424,39 @@ export function buildStage(scene, { shadowSize = 2048 } = {}) {
 
   bake(scene, statics);
 
+  // Weather: the whole stadium's light fades toward a preset (harsh sunlight / rain gloom).
+  const skyU = sky.material.uniforms;
+  const W0 = {
+    key: key.color.clone(), keyI: key.intensity, hemi: hemi.color.clone(), hemiI: hemi.intensity,
+    top: skyU.top.value.clone(), mid: skyU.mid.value.clone(), horizon: skyU.horizon.value.clone(), fog: scene.fog.color.clone(),
+  };
+  const col = (h) => new THREE.Color(h);
+  const WEATHER = {
+    sun: { key: col(0xfff0c8), keyI: 3.8, hemi: col(0xffe6c0), hemiI: 1.4, top: col(0x2d5aa8), mid: col(0xd0906a), horizon: col(0xffd080), fog: col(0xd09a70) },
+    rain: { key: col(0x9fb4d8), keyI: 1.2, hemi: col(0x8aa0c8), hemiI: 0.85, top: col(0x0c1018), mid: col(0x263040), horizon: col(0x44536a), fog: col(0x33404f) },
+  };
+  let wantW = null;
+  let shownW = null;
+  let wk = 0;
+  updaters.push((t, dt) => {
+    const target = wantW && wantW === shownW ? 1 : 0;
+    wk += (target - wk) * Math.min(1, dt * 1.6);
+    if (wk < 0.02 && shownW !== wantW) shownW = wantW;
+    const P = shownW ? WEATHER[shownW] : null;
+    const k = P ? wk : 0;
+    const mix = (a, b) => (P ? a.clone().lerp(b, k) : a);
+    key.color.copy(mix(W0.key, P && P.key));
+    key.intensity = W0.keyI + (P ? (P.keyI - W0.keyI) * k : 0);
+    hemi.color.copy(mix(W0.hemi, P && P.hemi));
+    hemi.intensity = W0.hemiI + (P ? (P.hemiI - W0.hemiI) * k : 0);
+    skyU.top.value.copy(mix(W0.top, P && P.top));
+    skyU.mid.value.copy(mix(W0.mid, P && P.mid));
+    skyU.horizon.value.copy(mix(W0.horizon, P && P.horizon));
+    scene.fog.color.copy(mix(W0.fog, P && P.fog));
+  });
+
   return {
+    setWeather(id) { wantW = id || null; },
     drones,
     // Big moments (KOs, super-effective hits) make the crowd jump.
     cheer(amount) { cheer = Math.min(1, cheer + amount); },

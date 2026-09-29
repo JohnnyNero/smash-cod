@@ -147,7 +147,7 @@ export class UI {
           ${extra}
         </div>`;
       }).join('');
-      const teamLine = m.mode === 'TEAM'
+      const teamLine = m.teamRules
         ? `<div class="team-line">${s.team.map((t, k) => `<span class="${k === s.focus ? 'on' : ''}">${SPECIES[t.species].name}</span>`).join('')}</div>`
         : '';
       const editing = `<div class="editing">EDITING ${sp.name.toUpperCase()} · moves from its real learnset, and its ability</div>`;
@@ -167,7 +167,7 @@ export class UI {
       </div>`;
     }).join('');
     this.screens.select.innerHTML = `
-      <div class="select-top"><h2>${m.mode === 'TEAM' ? 'BUILD YOUR TEAM' : 'CHOOSE YOUR POKÉMON'}</h2><div class="rules">${m.rulesText}</div></div>
+      <div class="select-top"><h2>${m.teamRules ? 'BUILD YOUR TEAM' : 'CHOOSE YOUR POKÉMON'}</h2><div class="rules">${m.rulesText}</div></div>
       <div class="cards">${cards}</div>
       <div class="select-hint">${m.hint}</div>
       ${m.canStart ? '<button class="start-btn" data-action="start">BATTLE ▶</button>' : ''}`;
@@ -283,6 +283,7 @@ export class UI {
           e.classList.toggle('low', pp > 0 && pp <= Math.ceil(mv.pp / 4));
           e.classList.toggle('out', pp <= 0);
         });
+        set('called' + slot, f.called === slot, (v) => e.classList.toggle('called', v));
       }
       c.strip.forEach((chip, k) => {
         const t = pl.team[k];
@@ -367,6 +368,66 @@ export class UI {
     });
     const bar = root.querySelector('.pick-timer i');
     if (bar) bar.style.width = `${Math.max(0, k.timer / this.pickMax) * 100}%`;
+  }
+
+  // ---- Showdown mode: the turn command screen (both players pick in secret).
+  showTurnPick(players, k, turn) {
+    const effTag = (e) => (e === 0 ? '<em class="none">✕ NO EFFECT</em>' : e > 1 ? '<em class="se">▲ SUPER EFFECTIVE</em>' : e < 1 ? '<em class="nve">▼ RESISTED</em>' : '');
+    const cols = players.map((p, i) => {
+      const f = p.team[p.active];
+      const rows = k.opts[i].map((o, r) => {
+        if (o.kind === 'switch') {
+          return `<button class="tp-opt sw ${o.ok ? '' : 'off'}" data-action="tpick" data-slot="${i}" data-row="${r}">
+            <span class="tp-name">⇄ ${o.mon.sp.name.toUpperCase()}</span>
+            <span class="tp-meta">${o.mon.sp.types.map(typeChip).join('')} ${Math.floor(o.mon.percent)}%</span></button>`;
+        }
+        const m = o.move;
+        const what = o.field ? 'USE NOW' : m.cat === 'status' ? 'CALL · STATUS' : 'CALL';
+        return `<button class="tp-opt ${o.ok ? '' : 'off'}" data-action="tpick" data-slot="${i}" data-row="${r}" style="--tc:${TYPE_COLORS[m.type]}">
+          <span class="tp-name">${m.name}</span>
+          <span class="tp-meta"><b>${what}</b> ${m.type.toUpperCase()} · ${o.pp}/${m.pp} PP ${o.field ? '' : effTag(o.eff)}</span></button>`;
+      }).join('');
+      return `<div class="pick-col tp-col" style="--pc:${f.colors.css}">
+        <div class="pick-head">P${i + 1}${p.isCpu ? ' · CPU' : ''} · ${f.sp.name.toUpperCase()}<small>${p.isCpu ? 'deciding…' : '▲▼ choose · A confirm · or tap'}</small></div>
+        <div class="tp-opts" data-opts="${i}">${rows}</div>
+        <div class="pick-lock" data-lock="${i}">CHOOSING…</div>
+      </div>`;
+    }).join('<div class="pick-vs">VS</div>');
+    this.screens.picks.innerHTML = `<div class="pick-panel tp-panel">
+      <h2>TURN ${turn}</h2><div class="pick-sub">Pick in secret: <b>call</b> a move (it hits harder and its effect always lands this turn), use a field move now, or <b>switch</b>. Switches go first, then priority, then Speed.</div>
+      <div class="pick-cols">${cols}</div>
+      <div class="pick-timer"><i></i></div></div>`;
+    this.screens.picks.classList.remove('hidden');
+    this.pickMax = k.timer;
+    this.updateTurnPick(k);
+  }
+
+  updateTurnPick(k) {
+    const root = this.screens.picks;
+    k.picks.forEach((v, i) => {
+      root.querySelectorAll(`[data-opts="${i}"] .tp-opt`).forEach((b, r) => {
+        b.classList.toggle('cur', v === null && k.cursor[i] === r);
+        b.classList.toggle('hide', v !== null); // your pick stays secret once locked
+      });
+    });
+    this.updatePicks(k);
+  }
+
+  // Turn clock (Showdown mode) and weather, top centre.
+  updateField(turn, weather) {
+    if (!this.fieldEl) {
+      this.fieldEl = el('div', 'field-bar');
+      this.root.append(this.fieldEl);
+    }
+    const parts = [];
+    if (turn) parts.push(`<span class="turn">TURN ${turn.turn}${turn.t !== null ? ` · ${Math.max(0, Math.ceil(turn.t))}s` : ''}</span>`);
+    if (weather) {
+      const left = turn ? `${weather.turns} turn${weather.turns === 1 ? '' : 's'}` : `${Math.ceil(weather.t)}s`;
+      parts.push(`<span class="wx ${weather.id}">${weather.id === 'sun' ? '☀ HARSH SUNLIGHT' : '☂ RAIN'} · ${left}</span>`);
+    }
+    const html = parts.join('');
+    if (html !== this.fieldHtml) { this.fieldHtml = html; this.fieldEl.innerHTML = html; }
+    this.fieldEl.classList.toggle('hidden', !html);
   }
 
   hidePicks() {

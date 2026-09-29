@@ -110,7 +110,7 @@ export const PLAYER_COLORS = [
 ];
 
 export const RULES = {
-  modes: ['TEAM', 'STOCK', 'TIME'],
+  modes: ['TEAM', 'STOCK', 'TIME', 'SHOWDOWN'],
   stocks: [1, 2, 3, 4, 5],
   minutes: [1, 2, 3, 4, 5],
   cpu: ['OFF', 'EASY', 'NORMAL', 'HARD'],

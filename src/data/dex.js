@@ -454,6 +454,64 @@ export const DEX = {
    "powder": false,
    "contact": false,
    "desc": "Raises the user's Attack by 2."
+  },
+  "thunderwave": {
+   "name": "Thunder Wave",
+   "type": "Electric",
+   "cat": "status",
+   "power": 0,
+   "pp": 20,
+   "priority": 0,
+   "powder": false,
+   "contact": false,
+   "desc": "Paralyzes the target.",
+   "status": "par"
+  },
+  "willowisp": {
+   "name": "Will-O-Wisp",
+   "type": "Fire",
+   "cat": "status",
+   "power": 0,
+   "pp": 15,
+   "priority": 0,
+   "powder": false,
+   "contact": false,
+   "desc": "Burns the target.",
+   "status": "brn"
+  },
+  "toxic": {
+   "name": "Toxic",
+   "type": "Poison",
+   "cat": "status",
+   "power": 0,
+   "pp": 10,
+   "priority": 0,
+   "powder": false,
+   "contact": false,
+   "desc": "Badly poisons the target. Poison types can't miss.",
+   "status": "tox"
+  },
+  "sunnyday": {
+   "name": "Sunny Day",
+   "type": "Fire",
+   "cat": "status",
+   "power": 0,
+   "pp": 5,
+   "priority": 0,
+   "powder": false,
+   "contact": false,
+   "desc": "For 5 turns, intense sunlight powers Fire moves."
+  },
+  "raindance": {
+   "name": "Rain Dance",
+   "type": "Water",
+   "cat": "status",
+   "power": 0,
+   "pp": 5,
+   "priority": 0,
+   "powder": false,
+   "contact": false,
+   "desc": "For 5 turns, heavy rain powers Water moves."
   }
  },
  "typechart": {
@@ -825,7 +883,10 @@ export const DEX = {
    "quickattack",
    "irontail",
    "fly",
-   "extremespeed"
+   "extremespeed",
+   "thunderwave",
+   "toxic",
+   "raindance"
   ],
   "charizard": [
    "quickattack",
@@ -834,7 +895,10 @@ export const DEX = {
    "flareblitz",
    "fly",
    "dragonclaw",
-   "swordsdance"
+   "swordsdance",
+   "willowisp",
+   "toxic",
+   "sunnyday"
   ],
   "blastoise": [
    "irontail",
@@ -842,14 +906,18 @@ export const DEX = {
    "icebeam",
    "rapidspin",
    "shellsmash",
-   "aurasphere"
+   "aurasphere",
+   "toxic",
+   "raindance"
   ],
   "venusaur": [
    "sludgebomb",
    "gigadrain",
    "sleeppowder",
    "leechseed",
-   "swordsdance"
+   "swordsdance",
+   "toxic",
+   "sunnyday"
   ],
   "gengar": [
    "thunderbolt",
@@ -858,7 +926,12 @@ export const DEX = {
    "shadowball",
    "hypnosis",
    "sludgewave",
-   "destinybond"
+   "destinybond",
+   "thunderwave",
+   "willowisp",
+   "toxic",
+   "sunnyday",
+   "raindance"
   ],
   "lucario": [
    "quickattack",
@@ -867,7 +940,10 @@ export const DEX = {
    "aurasphere",
    "closecombat",
    "extremespeed",
-   "swordsdance"
+   "swordsdance",
+   "toxic",
+   "sunnyday",
+   "raindance"
   ]
  }
 };

@@ -299,6 +299,37 @@ instead of running through, while rolls still cross through and aerial cross-ups
   flip. The extra clips live in `public/models/charizard_clips.json` (exported from the full
   clip set, loaded with the model).
 
+## SHOWDOWN mode (stage 3): Showdown's turns on top of the real-time fight
+
+A fourth rule set, **SHOWDOWN** (3v3 teams, one stock each, % and ring-outs as usual, no HP bar).
+`src/showdown.js`:
+
+- The fight runs in **turns of 15 s**. When the clock runs out (and the action has settled,
+  at most 1.5 s later) everything freezes on the **turn command screen**: both players pick in
+  secret, within 8 s (▲▼ + A, or tap):
+  - **call a move**: attacking and targeted status moves (Thunderbolt, Will-O-Wisp, Sleep
+    Powder...) become the turn's *called* move: 1.25x damage (knockback √1.25), its secondary
+    effect always lands, and it costs no PP for the rest of the turn (calling costs 1 PP);
+  - **use a field move now**: self / field moves (Swords Dance, Shell Smash, Sunny Day, Rain
+    Dance, Destiny Bond) take effect during resolution;
+  - **switch** to a benched teammate: the only way to switch in this mode (plus Volt Switch).
+- Resolution is in Showdown order: switches first, then priority, then Speed (base Spe x stat
+  stage, paralysis 0.5x, Chlorophyll in sun 2x), ties random, narrated by the battle log
+  ("P1 Venusaur used Sunny Day!"). So a slower Sunny Day overrides a faster Rain Dance, as in
+  Showdown. A faint ends the turn: replacement picks, then the next turn's commands.
+- Turn clock and weather sit top centre; the called move glows on the HUD; the CPU picks
+  commands (sets up / sets weather when it helps, switches out of bad matchups, statuses
+  unstatused foes, otherwise calls its best attack, rarely its recovery).
+
+**Weather** (all modes): Sunny Day / Rain Dance (learnable by those that learn them in
+Showdown). Sun: Fire 1.3x, Water 0.7x, nobody can be frozen (and it thaws the frozen); rain the
+reverse. Lasts 25 s, or 3 turns in SHOWDOWN mode. The stadium's light fades to harsh gold or
+rainy blue, with falling rain or drifting sun motes. Weather abilities: Solar Power (Charizard;
+specials 1.3x in sun, -0.6%/s), Rain Dish (Blastoise; heals 0.6%/s in rain), Chlorophyll
+(Venusaur; 1.5x speed in sun). **New status moves**: Thunder Wave (paralysis), Will-O-Wisp
+(burn), Toxic (bad poison), as projectiles. Hazards were planned, but none of our six can learn
+Stealth Rock or Spikes in Showdown, so they're left out.
+
 ## Abilities (stage 2 of the Showdown layer)
 
 Each Pokémon carries one ability (`src/abilities.js`), picked in the team builder (ABILITY row

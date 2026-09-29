@@ -29,6 +29,12 @@ working branch also deploys to GitHub Pages.
   Teams are saved in your browser.
 - **Solo / phone:** set **CPU** in P1's rules (it's on by default on phones). Phones play in landscape.
 
+## Modes
+
+- **TEAM**: 3v3, each Pokémon one stock, hidden switch picks after KOs.
+- **STOCK** / **TIME**: classic 1v1.
+- **SHOWDOWN**: 3v3 in 15-second turns. Each turn both players secretly pick a command (call a move, use a field move, or switch), resolved in Showdown order, then fight it out in real time.
+
 ## Controls
 
 | Action | Gamepad | Keyboard P1 | Keyboard P2 | Touch |

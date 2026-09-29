@@ -56,7 +56,7 @@ export class Fighter {
       buf: {}, bufFlick: null, bufStick: null, forceShortHop: false, softLand: false,
       dashF: 0, dashDir: 1, skidF: 0,
       boosts: {}, sleepFrames: 0, seed: null, destinyBond: 0,
-      status: null, confusion: 0, frozenF: 0, disabled: null,
+      status: null, confusion: 0, frozenF: 0, disabled: null, called: null,
     });
     this.st = fighterStats(this.sp);
     this.pp = {};
@@ -532,10 +532,10 @@ export class Fighter {
     }
     if (slot === 'side' && this.sx) this.facing = Math.sign(this.sx);
     let m = this.moveset.specials[slot];
-    if (this.pp[slot] <= 0) {
+    if (this.pp[slot] <= 0 && this.called !== slot) {
       m = slot === 'up' ? this.moveset.struggle.up : this.moveset.struggle.other;
     } else {
-      this.pp[slot]--;
+      if (this.called !== slot) this.pp[slot]--; // the called move costs no PP for the rest of its turn
       this.revealed.add(slot);
     }
     if (!this.grounded && m.air) m = { ...m, ...m.air, air: undefined };
@@ -635,6 +635,9 @@ export class Fighter {
         break;
       case 'boost':
         this.applyBoosts(ev.boosts);
+        break;
+      case 'weather':
+        g.setWeather(ev.weather, this);
         break;
       case 'destinybond':
         this.destinyBond = ev.frames;
@@ -1215,6 +1218,7 @@ export class Fighter {
   }
 
   tryStartSwitch() {
+    if (this.game.showdownMode) return false; // switching is a turn command in Showdown mode
     const target = this.game.switchTargetFor(this.slot, this.swapIndex());
     if (target < 0) return false;
     this.switchTarget = target;
@@ -1229,7 +1233,7 @@ export class Fighter {
     Object.assign(this, {
       move: null, zip: null, dodge: null, ledge: null, heldBy: null, charging: false,
       hitstun: 0, tumble: false, seed: null, destinyBond: 0, pivotPending: false, sleepFrames: 0,
-      boosts: {}, shieldStun: 0, flash: 0, invuln: 0, confusion: 0,
+      boosts: {}, shieldStun: 0, flash: 0, invuln: 0, confusion: 0, called: null,
     });
     // Showdown: a major status stays through switching (its timer pauses on the bench);
     // confusion is cured, and switching out thaws a frozen Pokémon.
@@ -1275,6 +1279,10 @@ export class Fighter {
       this.st.runSpeed *= PAR_SPEED;
       this.st.airSpeed *= PAR_SPEED;
     }
+    if (this.ability === 'chlorophyll' && this.game.weather && this.game.weather.id === 'sun') {
+      this.st.runSpeed *= 1.5;
+      this.st.airSpeed *= 1.5;
+    }
   }
 
   // Inflict a Showdown status: 'brn' | 'par' | 'psn' | 'tox' | 'frz' | 'confusion'.
@@ -1290,7 +1298,7 @@ export class Fighter {
     const def = STATUS[id];
     if (!def || this.status || this.state === 'sleep' || statusImmune(id, this.sp.types)) return false;
     if (id === 'frz') {
-      if (['held', 'ledge'].includes(this.state)) return false;
+      if (['held', 'ledge'].includes(this.state) || (this.game.weather && this.game.weather.id === 'sun')) return false;
       this.interrupt();
       this.status = { id, by };
       this.frozenF = freezeFrames(this.percent);
@@ -1381,6 +1389,7 @@ export class Fighter {
       this.setState('sleep');
       return true;
     }
+    if (['par', 'brn', 'psn', 'tox', 'frz', 'confusion'].includes(effect)) return this.inflict(effect, by);
     if (effect === 'seed') {
       this.seed = { frames: 360, by, tick: 0 };
       return true;
