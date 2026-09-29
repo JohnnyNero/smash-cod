@@ -34,7 +34,7 @@ const PREVIEW_TIME = 15; // seconds to pick a lead at team preview
 // Hidden picks: ◀ / ▲ / ▶ choose team member 1 / 2 / 3 (the mapping is public, the choice is not).
 const CALLED_MULT = 1.25; // Showdown mode: the move you called this turn hits harder
 const WEATHER_SECONDS = 25; // Sunny Day / Rain Dance outside Showdown mode
-const WEATHER_TURNS = 3; // ...and in Showdown mode (Showdown: 5 turns)
+const WEATHER_TURNS = 5; // ...and Showdown turns in Showdown mode (as in Showdown)
 const pickFromNav = (d) => (d.nav.left ? 0 : d.nav.up ? 1 : d.nav.right ? 2 : -1);
 
 // When each move actually connects, as fractions of its length, so animations can time their
@@ -690,7 +690,7 @@ export class Game {
     this.state = 'playing';
     this.canAct = true;
     this.touch.setVisible(this.players.some((p) => p.device === 'touch'));
-    if (this.showdownMode) this.sd.startPick(); // a faint ends the turn: next turn's commands
+    if (this.showdownMode) this.sd.startRound(); // after a faint: a new round, back to the Showdown turns
   }
 
   // CPU lead: best average matchup into the opponent's team.
@@ -1879,15 +1879,32 @@ export class Game {
       const m = f.model;
       m.root.visible = f.active;
       if (f.active && this.sdStaged()) {
-        // Staged on Showdown's spots, facing each other, idling (the fight resumes where it was).
+        // Staged on their start spots, facing each other, idling (the fight resumes where it was);
+        // during a Showdown turn they play their moves and flinch from hits in place.
         const me = SD_SPOT[i];
         const foe = SD_SPOT[1 - i];
-        m.root.position.set(me.x, 0, me.z);
-        m.update({
+        const view = {
           ...this.fighterView(f), state: 'ground', grounded: true, vx: 0, vy: 0, flip: -1, tumble: false, dash: false,
           skid: false, shake: 0, zipDir: null, dodge: null, anim: null, hits: null, p: 0, charging: false,
           yaw: Math.atan2(foe.x - me.x, foe.z - me.z), showTag: false,
-        }, dt);
+        };
+        let lunge = 0;
+        const A = f.sdAnim;
+        if (A) {
+          const p = (this.realTime - A.t0) / A.dur;
+          if (p >= 1) f.sdAnim = null;
+          else {
+            Object.assign(view, { state: 'attack', anim: A.move.anim, special: true, slot: A.move.slot || null, p, hits: Game.hitWindows(A.move) });
+            if (A.lunge) lunge = Math.sin(Math.min(1, p / 0.8) * Math.PI) * 0.72;
+          }
+        }
+        const H = f.sdHurt;
+        if (H && !A) {
+          if (this.realTime - H.t0 >= H.dur) f.sdHurt = null;
+          else Object.assign(view, { state: 'hitstun', vx: -Math.sign(foe.x - me.x) * 4, vy: 2, flash: Math.max(view.flash, 0.6) });
+        }
+        m.root.position.set(me.x + (foe.x - me.x) * lunge, 0, me.z + (foe.z - me.z) * lunge);
+        m.update(view, dt);
       } else if (f.active) {
         const [x, y] = lerpPos(f.px, f.py, f.pos.x, f.pos.y);
         m.root.position.set(x, y, 0);
@@ -1936,10 +1953,10 @@ export class Game {
     if (!this.demo && !this.sdStaged()) this.updateBubbles();
     else if (this.sdStaged()) this.ui.updateBubbles([]);
     // The turn screen has its own Showdown stat bars: hide the fight HUD under it.
-    this.ui.screens.hud.classList.toggle('sd-hide', this.sdStaged());
+    this.ui.screens.hud.classList.toggle('sd-hide', this.sdStaged() && this.state === 'turnpick'); // (shown while turns play out)
     if (!this.demo && this.fighters.length) this.ui.updateHUD(this.players, this.settings, this.timeLeft, this.teamMode);
     if (!this.demo && this.fighters.length) {
-      this.ui.updateField(this.sdStaged() ? null : this.showdownMode ? { turn: this.sd.n, t: this.state === 'playing' ? this.sd.t : null } : null,
+      this.ui.updateField(this.sdStaged() ? null : this.showdownMode ? { label: `Round ${this.sd.round} · FIGHT`, t: this.state === 'playing' ? this.sd.t : null } : null,
         this.sdStaged() ? null : this.weather);
     }
   }
@@ -2118,6 +2135,12 @@ export class Game {
     const r = dock && dock.getBoundingClientRect();
     this._dockLift = r && r.height ? r.height * 0.5 : 0;
     return this._dockLift;
+  }
+
+  // Where a staged Pokémon's body is during Showdown turns (effects aim here).
+  sdSpotCenter(f) {
+    const sp = SD_SPOT[f.slot] || SD_SPOT[0];
+    return { x: sp.x, y: f.h * 0.55, z: sp.z };
   }
 
   // Showdown mode's turn screen shows the battle from P1's side, Showdown-style.

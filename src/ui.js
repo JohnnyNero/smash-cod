@@ -380,7 +380,7 @@ export class UI {
   // ---- Showdown mode: the turn command screen, in Showdown's own battle-UI look: the battle
   // scene (background, animated sprites, stat bars, party icons) over both players' command
   // panels ("What will Pikachu do?", a 2x2 move grid, the switch row). Both pick in secret.
-  showTurnPick(players, k, turn, weather) {
+  showTurnPick(players, k, label, weather) {
     const pf = (i) => players[i].team[players[i].active];
     const boostText = (b) => Object.entries(b).filter(([, v]) => v).map(([st, v]) => {
       const m = v >= 0 ? (2 + v) / 2 : 2 / (2 - v);
@@ -398,7 +398,7 @@ export class UI {
     // Over the live 3D view (the camera has swept round behind P1's Pokémon): Showdown's layout,
     // foe's stat bar top left, yours bottom right, each trainer's party beside them.
     const scene = `<div class="sd-overlay">
-      <div class="sd-turnbox">Turn ${turn}<span data-sdtimer></span></div>
+      <div class="sd-turnbox">${label}<span data-sdtimer></span></div>
       ${weather ? `<div class="sd-wx ${weather.id}">${weather.id === 'sun' ? '☀ Harsh sunlight' : '☂ Rain'}</div>` : ''}
       ${statbar(foe, 'foe')}${statbar(ally, 'ally')}${trainer(players[1], 'foe')}${trainer(players[0], 'ally')}
     </div>`;
@@ -451,9 +451,9 @@ export class UI {
       this.root.append(this.fieldEl);
     }
     const parts = [];
-    if (turn) parts.push(`<span class="turn">TURN ${turn.turn}${turn.t !== null ? ` · ${Math.max(0, Math.ceil(turn.t))}s` : ''}</span>`);
+    if (turn) parts.push(`<span class="turn">${turn.label}${turn.t !== null ? ` · ${Math.max(0, Math.ceil(turn.t))}s` : ''}</span>`);
     if (weather) {
-      const left = turn ? `${weather.turns} turn${weather.turns === 1 ? '' : 's'}` : `${Math.ceil(weather.t)}s`;
+      const left = turn ? `${weather.turns} turn${weather.turns === 1 ? '' : 's'}` : `${Math.ceil(weather.t)}s`; // (Showdown turns left)
       parts.push(`<span class="wx ${weather.id}">${weather.id === 'sun' ? '☀ HARSH SUNLIGHT' : '☂ RAIN'} · ${left}</span>`);
     }
     const html = parts.join('');

@@ -136,6 +136,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 100,
    "desc": "10% chance to paralyze the target.",
    "secondary": [
     {
@@ -153,6 +154,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 100,
    "desc": "User switches out after damaging the target."
   },
   "quickattack": {
@@ -164,6 +166,7 @@ export const DEX = {
    "priority": 1,
    "powder": false,
    "contact": true,
+   "accuracy": 100,
    "desc": "Usually goes first."
   },
   "irontail": {
@@ -175,6 +178,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": true,
+   "accuracy": 75,
    "desc": "30% chance to lower the target's Defense by 1.",
    "secondary": [
     {
@@ -194,6 +198,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 100,
    "desc": "10% chance to burn the target.",
    "secondary": [
     {
@@ -211,6 +216,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": true,
+   "accuracy": 100,
    "desc": "Has 33% recoil. 10% chance to burn. Thaws user.",
    "secondary": [
     {
@@ -228,6 +234,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": true,
+   "accuracy": 95,
    "desc": "Flies up on first turn, then strikes the next turn."
   },
   "dragonclaw": {
@@ -239,6 +246,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": true,
+   "accuracy": 100,
    "desc": "No additional effect."
   },
   "hydropump": {
@@ -250,6 +258,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 80,
    "desc": "No additional effect."
   },
   "icebeam": {
@@ -261,6 +270,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 100,
    "desc": "10% chance to freeze the target.",
    "secondary": [
     {
@@ -278,6 +288,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": true,
+   "accuracy": 100,
    "desc": "Free user from hazards/bind/Leech Seed; +1 Spe.",
    "secondary": [
     {
@@ -297,6 +308,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 100,
    "desc": "Lowers Def, SpD by 1; raises Atk, SpA, Spe by 2."
   },
   "sludgebomb": {
@@ -308,6 +320,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 100,
    "desc": "30% chance to poison the target.",
    "secondary": [
     {
@@ -325,6 +338,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 100,
    "desc": "User recovers 50% of the damage dealt."
   },
   "sleeppowder": {
@@ -336,6 +350,7 @@ export const DEX = {
    "priority": 0,
    "powder": true,
    "contact": false,
+   "accuracy": 75,
    "desc": "Causes the target to fall asleep.",
    "status": "slp"
   },
@@ -348,6 +363,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 90,
    "desc": "1/8 of target's HP is restored to user every turn.",
    "volatile": "leechseed"
   },
@@ -360,6 +376,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 100,
    "desc": "20% chance to lower the target's Sp. Def by 1.",
    "secondary": [
     {
@@ -379,6 +396,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 60,
    "desc": "Causes the target to fall asleep.",
    "status": "slp"
   },
@@ -391,6 +409,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 100,
    "desc": "10% chance to poison adjacent Pokemon.",
    "secondary": [
     {
@@ -408,6 +427,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 100,
    "desc": "If an opponent knocks out the user, it also faints.",
    "volatile": "destinybond"
   },
@@ -420,6 +440,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 100,
    "desc": "This move does not check accuracy."
   },
   "closecombat": {
@@ -431,6 +452,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": true,
+   "accuracy": 100,
    "desc": "Lowers the user's Defense and Sp. Def by 1."
   },
   "extremespeed": {
@@ -442,6 +464,7 @@ export const DEX = {
    "priority": 2,
    "powder": false,
    "contact": true,
+   "accuracy": 100,
    "desc": "Nearly always goes first."
   },
   "swordsdance": {
@@ -453,6 +476,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 100,
    "desc": "Raises the user's Attack by 2."
   },
   "thunderwave": {
@@ -464,6 +488,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 90,
    "desc": "Paralyzes the target.",
    "status": "par"
   },
@@ -476,6 +501,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 85,
    "desc": "Burns the target.",
    "status": "brn"
   },
@@ -488,6 +514,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 90,
    "desc": "Badly poisons the target. Poison types can't miss.",
    "status": "tox"
   },
@@ -500,6 +527,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 100,
    "desc": "For 5 turns, intense sunlight powers Fire moves."
   },
   "raindance": {
@@ -511,6 +539,7 @@ export const DEX = {
    "priority": 0,
    "powder": false,
    "contact": false,
+   "accuracy": 100,
    "desc": "For 5 turns, heavy rain powers Water moves."
   }
  },

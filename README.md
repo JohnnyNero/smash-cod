@@ -33,7 +33,7 @@ working branch also deploys to GitHub Pages.
 
 - **TEAM**: 3v3, each Pokémon one stock, hidden switch picks after KOs.
 - **STOCK** / **TIME**: classic 1v1.
-- **SHOWDOWN**: 3v3 in 15-second turns. Each turn both players secretly pick a command (call a move, use a field move, or switch), resolved in Showdown order, then fight it out in real time.
+- **SHOWDOWN**: 3v3 in rounds. Each round: 3 Showdown turns (pick a move or a switch in secret; moves play out on the platform and add %, statuses, boosts, weather), then a 30-second Smash fight carrying all of it, with your last move charged. KOs only by ring-out.
 
 ## Controls
 

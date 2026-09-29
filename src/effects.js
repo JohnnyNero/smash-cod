@@ -86,13 +86,13 @@ export class Effects {
     });
   }
 
-  sparks(x, y, dx, dy, color = 0xffd27a, count = 8, speed = 10) {
+  sparks(x, y, dx, dy, color = 0xffd27a, count = 8, speed = 10, z = 0) {
     const base = Math.atan2(dy, dx);
     const spread = dx === 0 && dy === 0 ? Math.PI : 0.9;
     for (let i = 0; i < count; i++) {
       const a = (dx === 0 && dy === 0 ? Math.random() * Math.PI * 2 : base + (Math.random() - 0.5) * spread * 2);
       const s = speed * (0.4 + Math.random() * 0.8);
-      this.add(0, x, y, (Math.random() - 0.5) * 0.4, Math.cos(a) * s, Math.sin(a) * s, (Math.random() - 0.5) * 3,
+      this.add(0, x, y, z + (Math.random() - 0.5) * 0.4, Math.cos(a) * s, Math.sin(a) * s, (Math.random() - 0.5) * 3,
         0.2 + Math.random() * 0.25, 0.06 + Math.random() * 0.07, color, { grav: 20, drag: 2 });
     }
   }
@@ -230,10 +230,24 @@ export class Effects {
     }
   }
 
+  // A move crossing the field in Showdown mode's turns: a glowing orb and trail from p0 to p1
+  // ({x, y, z}), arriving after `dur` seconds.
+  shot(p0, p1, color, dur = 0.5) {
+    const vx = (p1.x - p0.x) / dur;
+    const vy = (p1.y - p0.y) / dur;
+    const vz = (p1.z - p0.z) / dur;
+    this.add(0, p0.x, p0.y, p0.z, vx, vy, vz, dur, 0.34, 0xffffff, {});
+    this.add(0, p0.x, p0.y, p0.z, vx, vy, vz, dur, 0.5, color, {});
+    for (let i = 1; i <= 8; i++) {
+      const lag = i * 0.03;
+      this.add(0, p0.x - vx * lag, p0.y - vy * lag, p0.z - vz * lag, vx, vy, vz, Math.max(0.05, dur - 0.02), 0.28 - i * 0.025, color, {});
+    }
+  }
+
   // A flat star burst at the point of contact that pops out and fades in a few frames.
-  impact(x, y, color = 0xffffff, size = 1, life = 0.13) {
+  impact(x, y, color = 0xffffff, size = 1, life = 0.13, z = 0) {
     const m = new THREE.Mesh(this.starGeo, additive(color, 1));
-    m.position.set(x, y, 0.7);
+    m.position.set(x, y, z + 0.7);
     m.rotation.z = Math.random() * Math.PI;
     m.userData = { life, max: life, size };
     m.renderOrder = 6;

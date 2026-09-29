@@ -35,6 +35,7 @@ for (const id of Object.keys(SPECIALS)) {
   moves[id] = {
     name: m.name, type: m.type, cat: m.category.toLowerCase(), power: m.basePower, pp: m.pp,
     priority: m.priority, powder: !!m.flags.powder, contact: !!m.flags.contact,
+    accuracy: m.accuracy === true ? 100 : m.accuracy, // (true = never misses)
     desc: m.shortDesc,
   };
   // Secondary effects (Showdown's `secondary`/`secondaries`): chance, status, volatile status,

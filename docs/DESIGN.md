@@ -299,6 +299,28 @@ instead of running through, while rolls still cross through and aerial cross-ups
   flip. The extra clips live in `public/models/charizard_clips.json` (exported from the full
   clip set, loaded with the model).
 
+## SHOWDOWN mode v2: rounds of Showdown turns, then a Smash fight
+
+`src/showdown.js`. Each **round** is:
+
+1. **3 Showdown turns**, played out on the platform (camera behind P1, both Pokémon on their
+   start spots). Both players pick in secret (10 s); commands resolve in Showdown order
+   (switches, then priority, then Speed) and each move actually happens: the attacker animates
+   (contact moves lunge across), the attack flies over in its type colour, the target flinches.
+   - damaging moves add %: Showdown's damage formula (Atk vs Def, STAB, type chart, weather, burn,
+     Blaze/Torrent/Overgrow…) on base power x 0.075, with Showdown accuracy (Hydro Pump 80%,
+     Hypnosis 60%…), secondary effects, drain, recoil, Close Combat's drops, Lightning Rod;
+   - status moves inflict their status (sleep, paralysis, burn, bad poison, Leech Seed);
+   - field moves boost stats / set weather (weather lasts 5 Showdown turns, as in Showdown);
+   - sleep (1/3 wake chance a turn), freeze (20% thaw), full paralysis (25%) and confusion (1/3
+     self-hit) can stop a Pokémon acting. **Nobody can be KO'd here**: % just piles up.
+2. **A 30 s Smash fight** from the start positions, carrying the %, statuses, stat stages and
+   weather; each player's last move from the turns is **charged** (1.25x, effect guaranteed, no
+   PP). KOs happen here by ring-out; a faint leads to the hidden replacement pick and a new round.
+
+The fight HUD hides while you pick (the turn screen has Showdown's stat bars) and shows while
+turns play out, so you watch the % climb. The field bar shows "Round N · FIGHT · 23s".
+
 ## Turn screen in 3D: Showdown's camera
 
 When a SHOWDOWN-mode turn screen opens, the camera sweeps (smoothstep, ~0.5 s) round behind
