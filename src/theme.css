@@ -106,9 +106,16 @@ b { color: inherit; }
 
 /* ---- battle HUD (Showdown stat bars, % instead of HP) --------------------------------- */
 .hud-card {
-  background: var(--panel); color: #222; border: 1px solid var(--sd-border); border-bottom: 3px solid var(--pc);
-  border-radius: 6px; clip-path: none; box-shadow: var(--shadow);
+  /* see-through: frosted glass over the stadium rather than a solid panel */
+  background: rgba(248, 248, 248, 0.42); backdrop-filter: blur(6px) saturate(1.2); -webkit-backdrop-filter: blur(6px) saturate(1.2);
+  color: #111; border: 1px solid rgba(255, 255, 255, 0.55); border-bottom: 3px solid var(--pc);
+  border-radius: 6px; clip-path: none; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
 }
+.hud-card .name, .hud-card .team-strip span { text-shadow: 0 0 3px rgba(255, 255, 255, 0.9); }
+.hud-card .pp { background-color: rgba(255, 255, 255, 0.35); }
+.hud-card .pp.mbtn { opacity: 0.92; }
+.hud-card .team-strip span { background: rgba(255, 255, 255, 0.45); border-color: rgba(0, 0, 0, 0.15); }
+.hud-card .portrait { background: rgba(255, 255, 255, 0.55) !important; }
 .portrait { clip-path: none; border-radius: 5px; background: #eee !important; border: 2px solid var(--pc); overflow: hidden; }
 .hud-card .name { color: #222; letter-spacing: 0.02em; font-size: 11px; }
 .hud-card .name small { color: var(--pc); }
