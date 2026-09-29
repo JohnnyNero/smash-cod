@@ -44,6 +44,7 @@ function strikeCurve(p, A, B) {
 // How much of the procedural joint pose rides on top of the real animation clips, by state.
 function clipLayer(v) {
   if (v.victory || v.taunt || v.faint) return 0;
+  if (v.flyJump && v.vy > -2) return 0.15;
   switch (v.state) {
     case 'ground': return v.skid ? 0.6 : v.dash ? 0.2 : 0;
     case 'attack': return 0.45;
@@ -327,6 +328,8 @@ export class CreatureModel {
 
   // v: view state from Game.fighterView.
   update(v, dt) {
+    // Charizard flies on its extra jumps (the fly clip) rather than flipping.
+    if (this.parts.flyJumps && v.airJump) { v.flip = -1; v.flyJump = true; }
     this.time += dt;
     const t = this.time;
     const o = {}; // joint offsets from rest pose

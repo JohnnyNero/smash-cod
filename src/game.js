@@ -1539,6 +1539,7 @@ export class Game {
       flip: f.flipF > 0 && f.state === 'air' ? 1 - f.flipF / 20 : -1,
       victory: (this.state === 'results' || (this.state === 'gameover' && this.gameoverTimer < 1.2)) && this.winner === f.slot,
       taunt: f.state === 'taunt' ? f.taunt : null,
+      airJump: !f.grounded && f.airJumps < f.st.airJumps,
       faint: !!f.faintPose,
       showTag: !this.demo && !f.faintPose,
     };

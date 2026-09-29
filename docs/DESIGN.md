@@ -284,6 +284,21 @@ instead of running through, while rolls still cross through and aerial cross-ups
   sits left of the buttons. The stadium's near stands were cut back so they don't crowd the
   sides of the shot.
 
+## Model fixes: runaway bones, grounded Charizard
+
+- **Exploding meshes:** the procedural offsets are applied on top of each clip by premultiplying
+  the bone's rotation. Bones a clip has no track for kept last frame's value, so the offset
+  stacked up every frame until the quaternion drifted off unit length and scaled the mesh
+  (a limb growing to fill the screen). Every driven bone is now reset to rest before the mixer
+  runs, and normalised after the offset. A fuzz test (long CPU battles with random frame
+  hitches, checking every bone's world matrix) runs clean for all six.
+- **Charizard** battles on the wing in Sword/Shield, so all its battle clips hover. On the
+  ground it now uses its field clips (standing idle, walk, sped up for the run); the hovering
+  clips (attacks, hurt, roar…) are lowered onto the floor by shifting the Waist node down while
+  grounded. Its extra air jumps (and the Fly special) play the flying clip instead of the front
+  flip. The extra clips live in `public/models/charizard_clips.json` (exported from the full
+  clip set, loaded with the model).
+
 ## Finishing blow & off-screen bubbles
 
 - `Game.predictKO` replays the launch physics (hitstun gravity, knockback decay, landing on the

@@ -30,6 +30,13 @@ const FIX = { pikachu: { rotX: -Math.PI / 2 } };
 // time-warped to put that moment on the move's first active frame.
 const IMPACT = { physical: 0.38, special: 0.34 };
 
+const EXTRA_CLIPS = { charizard: 'charizard_clips.json' };
+
+// Charizard's battle clips all hover in the air (it battles on the wing in Sword/Shield). On the
+// ground it uses its field clips (standing idle, walk) and the hovering ones are lowered onto
+// the floor by this much (Waist height, model units); its extra air jumps use the fly clip.
+const HOVER = { charizard: { drop: 0.69, ground: ['idle_ground', 'idle_alt_ground', 'walk', 'happy', 'angry', 'drowse', 'sleep'] } };
+
 export const useRigs = () => {
   const p = new URLSearchParams(typeof location !== 'undefined' ? location.search : '');
   return p.get('models') !== 'procedural' && p.get('style') !== 'lowpoly';
@@ -40,7 +47,17 @@ export async function preloadRigs() {
   const loader = new GLTFLoader();
   loader.setMeshoptDecoder(MeshoptDecoder);
   await Promise.all(IDS.map((id) => loader.loadAsync(`./models/${id}.glb`)
-    .then((g) => { stripRootMotion(g); GLTFS[id] = g; })
+    .then(async (g) => {
+      // Extra clips pulled from the full Sword/Shield set (e.g. Charizard's grounded idle and fly).
+      if (EXTRA_CLIPS[id]) {
+        try {
+          const list = await (await fetch(`./models/${EXTRA_CLIPS[id]}`)).json();
+          for (const j of list) g.animations.push(THREE.AnimationClip.parse(j));
+        } catch (e) { console.warn('extra clips failed', id, e); }
+      }
+      stripRootMotion(g);
+      GLTFS[id] = g;
+    })
     .catch((e) => console.warn('model failed, using procedural', id, e))));
 }
 
@@ -315,7 +332,19 @@ export function buildRig(model, id, colors, makeMat) {
     return alt && has('attack_physical2') ? 'attack_physical2' : 'attack_physical';
   };
   let idleFor = 0;
+  const hover = animated ? HOVER[id] : null;
+  const waist = hover ? (scene.getObjectByName('Waist') || scene.getObjectByName('trWaist')) : null;
+  let dropK = 0;
   const selectClip = (v, dt = 0) => {
+    const a = pickClip(v, dt);
+    if (waist) {
+      // Grounded in a hovering clip: lower it onto the floor.
+      const want = v.grounded && curName && !hover.ground.includes(curName) ? 1 : 0;
+      dropK += (want - dropK) * Math.min(1, dt * 14);
+    }
+    return a;
+  };
+  const pickClip = (v, dt = 0) => {
     const run = Math.abs(v.vx) / (v.runSpeed || 8);
     if (model.appearT < 1) return play(has('roar') ? 'roar' : 'idle', { loop: false, fade: 0.05 });
     if (v.faint) return play(has('faint') ? 'faint' : 'hurt', { loop: false, fade: 0.2 });
@@ -329,6 +358,23 @@ export function buildRig(model, id, colors, makeMat) {
     }
     const idle = v.state === 'ground' && !v.dash && run <= 0.08;
     idleFor = idle ? idleFor + dt : 0;
+    if (hover) {
+      // Charizard: grounded idle/walk/run on its feet; flying on its extra jumps and Fly.
+      const airborne = !v.grounded && ['air', 'helpless'].includes(v.state);
+      if (v.state === 'attack' && v.anim === 'fly') return play('fly', { fade: 0.1 });
+      if (airborne && v.airJump && v.vy > -2) return play('fly', { fade: 0.12, timeScale: 1.2 });
+      if (v.state === 'ground') {
+        if (v.dash || run > 0.72) return play('walk', { timeScale: Math.max(1.3, Math.min(2.4, run * 2.2)), fade: 0.12 });
+        if (run > 0.08 && !v.skid) return play('walk', { timeScale: Math.max(0.6, Math.min(1.6, run / 0.45)), fade: 0.15 });
+        if (idleFor > 6 && has('idle_alt_ground')) {
+          const a = play('idle_alt_ground', { loop: false, fade: 0.3 });
+          if (a && a.time >= a.getClip().duration - 0.05) idleFor = -Math.random() * 5;
+          return a;
+        }
+        return play('idle_ground', { fade: 0.25 });
+      }
+      if (v.grounded && ['shield', 'holding', 'switching', 'getup'].includes(v.state)) return play('idle_ground', { fade: 0.15 });
+    }
     switch (v.state) {
       case 'attack': {
         const name = attackClip(v);
@@ -372,6 +418,7 @@ export function buildRig(model, id, colors, makeMat) {
   return {
     rig: true,
     clips: animated,
+    flyJumps: !!hover, // air jumps fly (clip) instead of flipping
     feet,
     allFours: id === 'pikachu' && !animated, // the real run clip is already on all fours
     // Bone at the business end of a limb (motion trails).
@@ -396,8 +443,13 @@ export function buildRig(model, id, colors, makeMat) {
     // excite: the body's forward/vertical acceleration and turn rate, which set the springs going.
     retarget(dt = 1 / 60, excite = null, view = null) {
       if (mixer && view) {
+        // Bones a clip doesn't animate keep whatever they were last frame, so put every driven
+        // bone back to rest first; otherwise the offsets below would stack up frame after frame
+        // (the rotation spins away and drifts off unit length, blowing the mesh up).
+        for (const d of drivers) d.bone.quaternion.copy(d.qRest);
         selectClip(view, dt);
         mixer.update(dt);
+        if (waist && dropK > 0.001) waist.position.y -= hover.drop * dropK;
         model.body.getWorldQuaternion(qb);
         qbInv.copy(qb).invert();
       }
@@ -445,7 +497,7 @@ export function buildRig(model, id, colors, makeMat) {
           pwInv.copy(pw).invert();
           tq.premultiply(qb).multiply(qbInv);
           tq2.copy(pwInv).multiply(tq).multiply(pw);
-          d.bone.quaternion.premultiply(tq2);
+          d.bone.quaternion.premultiply(tq2).normalize();
           continue;
         }
         // bone = P⁻¹ · (Cacc⁻¹ · R · Cacc) · C · P · qRest
