@@ -302,8 +302,8 @@ instead of running through, while rolls still cross through and aerial cross-ups
 ## Turn screen in 3D: Showdown's camera
 
 When a SHOWDOWN-mode turn screen opens, the camera sweeps (smoothstep, ~0.5 s) round behind
-P1's Pokémon to Showdown's battle angle: both Pokémon are staged on Showdown's two spots on the
-main platform (`SD_SPOT`: P1 near the camera, P2 far back), facing each other and idling, and
+P1's Pokémon to Showdown's battle angle: both Pokémon are staged on their fight start positions
+(`SD_SPOT` = `STAGE.spawns`), with the camera behind P1's shoulder so P1 is near and P2 far back, facing each other and idling, and
 the 2D sprite box is gone: Showdown's stat bars (foe's top left, yours bottom right), the party
 boxes, the turn clock and weather tag sit over the live 3D view, with both players' command
 panels docked along the bottom. The projection is shifted (`setViewOffset`, measured from the

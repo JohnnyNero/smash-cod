@@ -2128,9 +2128,11 @@ export class Game {
 
 // Showdown's two battle spots on the main platform (P1 near the camera, P2 far back) and the
 // camera behind P1's shoulder looking across at P2.
-const SD_SPOT = [{ x: -3.0, z: 2.3 }, { x: 2.6, z: -2.1 }];
+// (their fight start positions: STAGE.spawns, on the platform's centre line)
+const SD_SPOT = STAGE.spawns.map((x) => ({ x, z: 0 }));
 const SD_CAM = {
-  pos: new THREE.Vector3(-9, 4.2, 11.5),
-  look: new THREE.Vector3(3.4, 0.2, -2.2),
+  pos: new THREE.Vector3(-10.5, 4.2, 8),
+  look: new THREE.Vector3(2.5, 0, -1),
 };
 Game.SD_CAM = SD_CAM; // (exposed for tuning)
+Game.SD_SPOT = SD_SPOT;
