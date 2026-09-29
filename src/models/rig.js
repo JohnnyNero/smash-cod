@@ -36,6 +36,9 @@ const EXTRA_CLIPS = { charizard: 'charizard_clips.json' };
 // ground it uses its field clips (standing idle, walk) and the hovering ones are lowered onto
 // the floor by this much (Waist height, model units); its extra air jumps use the fly clip.
 const HOVER = { charizard: { drop: 0.69, ground: ['idle_ground', 'idle_alt_ground', 'walk', 'happy', 'angry', 'drowse', 'sleep'] } };
+// Quick grounded normals that would cram a whole flying tackle clip into a few frames: these
+// stand on the ground idle and are posed entirely by the procedural choreography instead.
+const CLIPLESS = { charizard: new Set(['jab', 'ftilt', 'utilt', 'dtilt', 'grab', 'throwF', 'throwB', 'throwU', 'throwD', 'claw']) };
 
 export const useRigs = () => {
   const p = new URLSearchParams(typeof location !== 'undefined' ? location.search : '');
@@ -333,6 +336,7 @@ export function buildRig(model, id, colors, makeMat) {
   };
   let idleFor = 0;
   const hover = animated ? HOVER[id] : null;
+  const clipless = (v) => !!(animated && CLIPLESS[id] && v.state === 'attack' && v.grounded && CLIPLESS[id].has(v.anim));
   const waist = hover ? (scene.getObjectByName('Waist') || scene.getObjectByName('trWaist')) : null;
   let dropK = 0;
   const selectClip = (v, dt = 0) => {
@@ -377,6 +381,7 @@ export function buildRig(model, id, colors, makeMat) {
     }
     switch (v.state) {
       case 'attack': {
+        if (clipless(v)) return play('idle_ground', { fade: 0.08 });
         const name = attackClip(v);
         const a = play(name, { loop: false, fade: 0.06 });
         if (a) {
@@ -419,6 +424,7 @@ export function buildRig(model, id, colors, makeMat) {
     rig: true,
     clips: animated,
     flyJumps: !!hover, // air jumps fly (clip) instead of flipping
+    clipless,
     feet,
     allFours: id === 'pikachu' && !animated, // the real run clip is already on all fours
     // Bone at the business end of a limb (motion trails).

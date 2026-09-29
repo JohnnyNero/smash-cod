@@ -299,6 +299,34 @@ instead of running through, while rolls still cross through and aerial cross-ups
   flip. The extra clips live in `public/models/charizard_clips.json` (exported from the full
   clip set, loaded with the model).
 
+## Balance: attack tempo & power per Pokémon
+
+Every Pokémon used to share the same normals' frame data (only scaled for size), so small
+fast Pokémon had no speed edge and the heavies no trade-off. Now each species has:
+
+- `tempo` (src/data/roster.js): a multiplier on attack frame data (startup, active frames, end
+  lag, landing lag, smash charge point) for normals, and at half strength for specials.
+  Movement lengths (zip/dash frames) are untouched so recoveries don't change.
+- `power`: a knockback multiplier for normals (damage already follows Showdown Atk/SpA).
+- Lucario's aura is softened to at most +25% damage (from +50%).
+
+| | tempo | power | CPU round-robin win rate, before → after |
+|---|---|---|---|
+| Pikachu | 0.72 | 1.15 | 3% → 47% |
+| Charizard | 1.08 | 1.05 | 60% → 52% |
+| Blastoise | 1.07 | 1.12 | 47% → 37% |
+| Venusaur | 1.02 | 1.06 | 53% → 52% |
+| Gengar | 0.85 | 1.05 | 47% → 58% |
+| Lucario | 1.06 | 0.85 | 90% → 55% |
+
+(Hard CPU vs hard CPU, 2 stocks, every ordered pairing; 60 games per Pokémon after, 30 before.
+About ±6% noise. The CPU plays everyone the same way, so this balances the kits' raw strength,
+not how well a human can play each one.)
+
+Charizard's quick grounded normals (jab, tilts, grab/throws, Dragon Claw) no longer play its
+full flying-tackle clip crammed into a few frames: it stays on its ground idle and the
+procedural choreography does the swing (`CLIPLESS` in rig.js).
+
 ## Finishing blow & off-screen bubbles
 
 - `Game.predictKO` replays the launch physics (hitstun gravity, knockback decay, landing on the

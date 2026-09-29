@@ -40,6 +40,6 @@ export function damageFor(attacker, defender, base, move) {
   const type = move && move.type;
   const stab = type && attacker.sp.types.includes(type) ? COMBAT.stab : 1;
   const eff = type ? typeEffectiveness(type, defender.sp.types) : 1;
-  const aura = attacker.sp.aura ? 1 + Math.min(0.5, attacker.percent / 250) : 1;
+  const aura = attacker.sp.aura ? 1 + Math.min(0.25, attacker.percent / 480) : 1; // Lucario: up to +25% at 120%
   return { damage: base * statMult * stab * effMultiplier(eff) * aura, eff, stab: stab > 1 };
 }

@@ -1053,7 +1053,8 @@ export class CreatureModel {
     // depends on what the clip already covers (none for idle/walk/run, some for attacks and hits,
     // full for air, shield, ledge and other states the clips don't have).
     if (this.parts.clips) {
-      const w = clipLayer(v);
+      // Attacks the rig plays without a clip (e.g. Charizard's quick grounded normals) are all ours.
+      const w = this.parts.clipless && this.parts.clipless(v) ? 1 : clipLayer(v);
       this.clipW = w;
       for (const name of JOINTS) { o[name].x *= w; o[name].y *= w; o[name].z *= w; }
       if (v.state === 'ground' && !v.skid) bodyY *= 0.2; // the clips carry their own bob
