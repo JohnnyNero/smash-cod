@@ -987,6 +987,12 @@ export class Game {
     };
     nudge(a, -dir * step);
     nudge(b, dir * step);
+    // Soft wall: a fighter moving into the other loses most of that inward speed each frame,
+    // so you can't just run or dash straight through (rolls still pass, and it's gentler in
+    // the air so aerial cross-ups stay possible).
+    const resist = air ? COMBAT.pushResistAir : COMBAT.pushResist;
+    if (a.vel.x * dir > 0) a.vel.x *= 1 - resist;
+    if (b.vel.x * -dir > 0) b.vel.x *= 1 - resist;
   }
 
   // ------------------------------------------------------------ combat

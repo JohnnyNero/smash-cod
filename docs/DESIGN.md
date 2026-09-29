@@ -248,9 +248,11 @@ target) now always runs: RenderPass -> bloom (high quality only) -> ink -> Outpu
 ## Body push
 
 Like Smash (and Rivals), fighters aren't solid: overlapping fighters ease apart with a soft push
-(`Game.bodyPush`, `COMBAT.pushWidth`/`pushMax`), weak enough that dashes and rolls still cross
-through someone, weaker in the air, never shoving anyone off a ledge, and off during dodges,
-grabs, hitstun, ledge hangs, switching and respawns. Walking into someone nudges them along.
+(`Game.bodyPush`, `COMBAT.pushWidth`/`pushMax`), never shoving anyone off a ledge, and off during
+dodges, grabs, hitstun, ledge hangs, switching and respawns. On top of the push, overlapping
+fighters lose part of their inward speed each frame (`pushResist` 0.35 on the ground, 0.12 in the
+air), a soft wall: walking or dashing into someone stops at their body and nudges them along
+instead of running through, while rolls still cross through and aerial cross-ups stay possible.
 
 ## Finishing blow & off-screen bubbles
 
