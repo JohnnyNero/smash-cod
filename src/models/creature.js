@@ -41,6 +41,20 @@ function strikeCurve(p, A, B) {
   return { a, s, f, s0 };
 }
 
+// How much of the procedural joint pose rides on top of the real animation clips, by state.
+function clipLayer(v) {
+  if (v.victory) return 0;
+  switch (v.state) {
+    case 'ground': return v.skid ? 0.6 : v.dash ? 0.2 : 0;
+    case 'attack': return 0.45;
+    case 'hitstun': case 'held': return 0.4;
+    case 'jumpsquat': case 'landlag': return 0.3;
+    case 'sleep': return 0;
+    case 'air': case 'helpless': return 0.8;
+    default: return 1; // shield, ledge, dodge, holding, getup, shieldbreak, switching
+  }
+}
+
 // Each Pokémon's aura glows in its own colour on attacks.
 const SPECIES_AURA = { pikachu: 0xffe040, charizard: 0xff7a30, blastoise: 0x5ab0ff, venusaur: 0x7acc4a, gengar: 0xb07aff, lucario: 0x4a8aff };
 
@@ -999,6 +1013,16 @@ export class CreatureModel {
     if (spin !== null) this.spinner.rotation.z = spin;
     else this.spinner.rotation.z = damp(wrap(this.spinner.rotation.z), 0, 14, dt);
 
+    // ---- real animation clips: the procedural joint layer rides on top at a strength that
+    // depends on what the clip already covers (none for idle/walk/run, some for attacks and hits,
+    // full for air, shield, ledge and other states the clips don't have).
+    if (this.parts.clips) {
+      const w = clipLayer(v);
+      this.clipW = w;
+      for (const name of JOINTS) { o[name].x *= w; o[name].y *= w; o[name].z *= w; }
+      if (v.state === 'ground' && !v.skid) bodyY *= 0.2; // the clips carry their own bob
+    }
+
     // ---- apply: joints follow their targets through slightly springy (underdamped) motion,
     // so poses flow into each other with a little overshoot instead of snapping.
     const atk = v.state === 'attack';
@@ -1033,7 +1057,8 @@ export class CreatureModel {
     for (const ankle of this.feet) {
       const u = ankle.userData;
       const swing = this.cur[u.leg].x + (u.knee ? this.cur[u.knee].x : 0);
-      ankle.rotation.x = damp(ankle.rotation.x, -swing * plant + (grounded ? 0 : 0.35), 30, dt);
+      const aw = this.parts.clips ? this.clipW : 1;
+      ankle.rotation.x = damp(ankle.rotation.x, (-swing * plant + (grounded ? 0 : 0.35)) * aw, 30, dt);
     }
     pv.bodyY = damp(pv.bodyY, bodyY, atk ? 30 : 20, dt);
     pv.lunge = damp(pv.lunge, lunge * this.h, atk ? 35 : 12, dt);
@@ -1080,7 +1105,7 @@ export class CreatureModel {
     }
 
     if (this.parts.update) this.parts.update(v, t, dt, this.springs);
-    if (this.parts.retarget) this.parts.retarget(dt, { ax: fwdAcc, ay, yawV: this.yawV || 0 }); // rigged model: joints -> bones
+    if (this.parts.retarget) this.parts.retarget(dt, { ax: fwdAcc, ay, yawV: this.yawV || 0 }, v); // rigged model: clips + joints -> bones
 
     // Blink every few seconds.
     this.blinkT -= dt;

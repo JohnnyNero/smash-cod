@@ -1458,6 +1458,8 @@ export class Game {
       runSpeed: f.st.runSpeed,
       anim: inMove ? f.move.anim : null,
       hits: inMove ? hitWindows(f.move) : null,
+      special: inMove ? !!f.move.special : false,
+      slot: inMove ? f.move.slot || null : null,
       // Progress is interpolated between sim steps (except while frozen) so animation is smooth.
       p: inMove ? Math.min(1, (f.moveF + (this.hitstop > 0 || f.charging ? 0 : this.alpha || 0)) / f.move.total)
         : f.state === 'getup' ? f.sf / (f.getupTotal || 1) : 0,

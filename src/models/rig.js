@@ -13,6 +13,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { phaseU } from './choreo.js';
 
 const glow = (color, opacity) => new THREE.MeshBasicMaterial({
   color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
@@ -21,8 +23,12 @@ const glow = (color, opacity) => new THREE.MeshBasicMaterial({
 const IDS = ['pikachu', 'charizard', 'blastoise', 'venusaur', 'gengar', 'lucario'];
 const GLTFS = {};
 
-// Per-model fixes: Pikachu's file lies Z-up.
+// Per-model fixes for the older (unanimated) files: Pikachu's lies Z-up.
 const FIX = { pikachu: { rotX: -Math.PI / 2 } };
+
+// Where the hit lands inside each attack clip (fraction of its length), so clips can be
+// time-warped to put that moment on the move's first active frame.
+const IMPACT = { physical: 0.38, special: 0.34 };
 
 export const useRigs = () => {
   const p = new URLSearchParams(typeof location !== 'undefined' ? location.search : '');
@@ -32,12 +38,27 @@ export const useRigs = () => {
 export async function preloadRigs() {
   if (!useRigs()) return;
   const loader = new GLTFLoader();
+  loader.setMeshoptDecoder(MeshoptDecoder);
   await Promise.all(IDS.map((id) => loader.loadAsync(`./models/${id}.glb`)
-    .then((g) => { GLTFS[id] = g; })
+    .then((g) => { stripRootMotion(g); GLTFS[id] = g; })
     .catch((e) => console.warn('model failed, using procedural', id, e))));
 }
 
 export const hasRig = (id) => !!GLTFS[id];
+
+// Game clips move the whole body (attacks lunge a metre or more). Our physics owns horizontal
+// position, so pin the root bones' x/z to their first frame; vertical hops stay.
+function stripRootMotion(gltf) {
+  for (const clip of gltf.animations || []) {
+    for (const tr of clip.tracks) {
+      if (!/^(Origin|Waist|trOrigin|trWaist)\.position$/.test(tr.name)) continue;
+      const v = tr.values;
+      const x0 = v[0];
+      const z0 = v[2];
+      for (let i = 0; i < v.length; i += 3) { v[i] = x0; v[i + 2] = z0; }
+    }
+  }
+}
 
 const stripName = (n) => n.replace(/_\d+$/, '');
 
@@ -80,8 +101,10 @@ const ID = new THREE.Quaternion();
 export function buildRig(model, id, colors, makeMat) {
   const src = GLTFS[id];
   const scene = cloneSkinned(src.scene);
+  // Animated (Sword/Shield) models carry real clips; the older files are posed procedurally.
+  const animated = (src.animations || []).length > 4;
   const fix = new THREE.Group();
-  if (FIX[id]?.rotX) fix.rotation.x = FIX[id].rotX;
+  if (!animated && FIX[id]?.rotX) fix.rotation.x = FIX[id].rotX;
   fix.add(scene);
   const wrap = new THREE.Group();
   wrap.add(fix);
@@ -110,7 +133,7 @@ export function buildRig(model, id, colors, makeMat) {
   };
   scene.traverse((o) => {
     if (!o.isMesh) return;
-    if (/^TailA/.test(dominantBone(o))) {
+    if (/^(tr)?TailA/.test(dominantBone(o))) {
       o.material = flameMat(o.material);
       o.castShadow = false;
       o.frustumCulled = false;
@@ -162,7 +185,7 @@ export function buildRig(model, id, colors, makeMat) {
     const dummy = dummies[joint] || (dummies[joint] = new THREE.Object3D());
     let k = 0;
     for (const [names, weight] of chain) {
-      const bone = names.map((n) => bones[side(n)]).find(Boolean);
+      const bone = names.map((n) => bones[side('tr' + n)] || bones[side(n)]).find(Boolean);
       if (!bone || drivers.some((d) => d.bone === bone)) continue;
       const P = bone.parent ? restWorld(bone.parent) : new THREE.Quaternion();
       // Follow-through: each further bone of a floppy chain lags a little behind the last.
@@ -186,7 +209,11 @@ export function buildRig(model, id, colors, makeMat) {
 
   // Species extras.
   let extra = null;
-  if (id === 'charizard' && dummies.wingL) {
+  if (animated) {
+    // The clips animate wings and locks; just keep the tail flame flickering.
+    const flameBone = bones.TailA01 || bones.trTailA01;
+    extra = { update() { if (flameBone) flameBone.scale.set(0.9 + Math.random() * 0.15, 0.85 + Math.random() * 0.35, 0.9 + Math.random() * 0.15); } };
+  } else if (id === 'charizard' && dummies.wingL) {
     const flameBone = bones.TailA01;
     extra = {
       update(v, t, dt, springs) {
@@ -209,9 +236,10 @@ export function buildRig(model, id, colors, makeMat) {
     };
   }
 
-  // Rest corrections: arms hang down (and a little out) instead of a T/A pose.
+  // Rest corrections: arms hang down (and a little out) instead of a T/A pose. (Not needed when
+  // clips pose the arms.)
   const quad = id === 'venusaur';
-  for (const [arm, fore] of [['armL', 'LForeArm'], ['armR', 'RForeArm']]) {
+  for (const [arm, fore] of animated ? [] : [['armL', 'LForeArm'], ['armR', 'RForeArm']]) {
     const d = drivers.find((x) => x.dummy === dummies[arm] && stripName(x.bone.name) === side(arm === 'armL' ? 'LArm' : 'RArm'));
     const f = bones[side(fore)];
     if (!d || !f) continue;
@@ -250,13 +278,86 @@ export function buildRig(model, id, colors, makeMat) {
     feet.push(a);
   }
 
+  // ---- clips (animated models)
+  const mixer = animated ? new THREE.AnimationMixer(scene) : null;
+  const clipByName = {};
+  for (const c of src.animations || []) clipByName[c.name] = c;
+  const actions = {};
+  let cur = null;
+  let curName = '';
+  const has = (n) => !!clipByName[n];
+  const play = (name, { loop = true, fade = 0.15, timeScale = 1 } = {}) => {
+    if (!has(name)) name = 'idle';
+    if (!has(name)) return null;
+    const a = actions[name] || (actions[name] = mixer.clipAction(clipByName[name]));
+    if (curName !== name) {
+      a.reset();
+      a.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
+      a.clampWhenFinished = !loop;
+      a.paused = false;
+      a.enabled = true;
+      a.setEffectiveWeight(1);
+      a.play();
+      if (cur) a.crossFadeFrom(cur, fade, false);
+      cur = a;
+      curName = name;
+    }
+    a.timeScale = timeScale;
+    return a;
+  };
+  // Attack clip for a move: physical clips for normals, special ones for specials; the second
+  // variant (if the species has one) for smashes, aerials and up/down specials, for variety.
+  const attackClip = (v) => {
+    if (v.special) return (v.slot === 'up' || v.slot === 'down') && has('attack_special2') ? 'attack_special2' : 'attack_special';
+    const alt = v.anim && /smash|air/.test(v.anim);
+    return alt && has('attack_physical2') ? 'attack_physical2' : 'attack_physical';
+  };
+  const selectClip = (v) => {
+    const run = Math.abs(v.vx) / (v.runSpeed || 8);
+    if (model.appearT < 1) return play(has('roar') ? 'roar' : 'idle', { loop: false, fade: 0.05 });
+    if (v.victory) return play(has('happy') ? 'happy' : 'roar', { loop: true, fade: 0.25 });
+    switch (v.state) {
+      case 'attack': {
+        const name = attackClip(v);
+        const a = play(name, { loop: false, fade: 0.06 });
+        if (a) {
+          // Time-warp the clip so its impact lands on the move's first active frame.
+          const D = a.getClip().duration;
+          const imp = (v.special ? IMPACT.special : IMPACT.physical) * D;
+          const [A, B] = (v.hits || [[0.3, 0.5]])[0];
+          const u = v.charging ? 0.3 : phaseU(v.p, A, B);
+          a.paused = true;
+          a.time = u < 0.4 ? (u / 0.4) * imp : imp + ((u - 0.4) / 0.6) * (D * 0.98 - imp);
+        }
+        return a;
+      }
+      case 'hitstun': case 'held': return play('hurt', { loop: false, fade: 0.05 });
+      case 'shieldbreak': return play(has('drowse') ? 'drowse' : 'hurt', { loop: true });
+      case 'sleep': return play(has('sleep') ? 'sleep' : has('drowse') ? 'drowse' : 'idle', { loop: true, fade: 0.3 });
+      case 'jumpsquat': case 'landlag': case 'getup': return play('land', { loop: false, fade: 0.05 });
+      case 'ground':
+        if (v.dash || run > 0.72) return play('run', { timeScale: Math.max(0.75, Math.min(1.5, run * 1.05)), fade: 0.12 });
+        if (run > 0.08 && !v.skid) return play('walk', { timeScale: Math.max(0.6, Math.min(1.6, run / 0.45)), fade: 0.15 });
+        return play('idle', { fade: 0.2 });
+      default: return play('idle', { fade: 0.15 }); // air, shield, ledge, dodge, holding...
+    }
+  };
+  // Parents first, so offsets compose down the hierarchy.
+  const depth = (b) => { let n = 0; for (let x = b; x; x = x.parent) n++; return n; };
+  if (animated) drivers.sort((a, b) => depth(a.bone) - depth(b.bone));
+  const qb = new THREE.Quaternion();
+  const qbInv = new THREE.Quaternion();
+  const pw = new THREE.Quaternion();
+  const pwInv = new THREE.Quaternion();
+
   return {
     rig: true,
+    clips: animated,
     feet,
-    allFours: id === 'pikachu',
+    allFours: id === 'pikachu' && !animated, // the real run clip is already on all fours
     // Bone at the business end of a limb (motion trails).
     limb(name) {
-      const pick = (...ns) => ns.map((n) => bones[side(n)] || bones[n]).find(Boolean) || null;
+      const pick = (...ns) => ns.map((n) => bones[side('tr' + n)] || bones[side(n)] || bones[n]).find(Boolean) || null;
       switch (name) {
         case 'handR': return pick('RHand', 'RForeArm');
         case 'handL': return pick('LHand', 'LForeArm');
@@ -274,7 +375,13 @@ export function buildRig(model, id, colors, makeMat) {
     drivers,
     // After creature.js has posed the joints: write them onto the bones.
     // excite: the body's forward/vertical acceleration and turn rate, which set the springs going.
-    retarget(dt = 1 / 60, excite = null) {
+    retarget(dt = 1 / 60, excite = null, view = null) {
+      if (mixer && view) {
+        selectClip(view);
+        mixer.update(dt);
+        model.body.getWorldQuaternion(qb);
+        qbInv.copy(qb).invert();
+      }
       // Keep a short history of each joint's rotation for the lagging chain bones.
       for (const dm of Object.values(dummies)) {
         const h = dm.userData.hist || (dm.userData.hist = []);
@@ -312,6 +419,16 @@ export function buildRig(model, id, colors, makeMat) {
         // second, so the target must not also be an input.)
         if (d.weight !== 1) tq.slerpQuaternions(ID, tq3, d.weight);
         else tq.copy(tq3);
+        if (mixer) {
+          // On top of the clip pose: rotate the bone by R about its pivot in model axes.
+          // local' = pw⁻¹ · (Qb R Qb⁻¹) · pw · local
+          d.bone.parent.getWorldQuaternion(pw);
+          pwInv.copy(pw).invert();
+          tq.premultiply(qb).multiply(qbInv);
+          tq2.copy(pwInv).multiply(tq).multiply(pw);
+          d.bone.quaternion.premultiply(tq2);
+          continue;
+        }
         // bone = P⁻¹ · (Cacc⁻¹ · R · Cacc) · C · P · qRest
         tq.premultiply(d.CaccInv).multiply(d.Cacc);
         tq2.copy(d.Pinv).multiply(tq).multiply(d.C).multiply(d.P).multiply(d.qRest);

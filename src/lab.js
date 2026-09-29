@@ -138,7 +138,7 @@ export function startLab(game) {
     };
     const m = currentMove();
     if (m) {
-      return { ...base, state: 'attack', anim: m.anim, p: Math.min(1, S.f / m.total), hits: Game.hitWindows(m), grounded: !m.aerial, vy: m.aerial ? 0.001 : 0 };
+      return { ...base, state: 'attack', anim: m.anim, p: Math.min(1, S.f / m.total), hits: Game.hitWindows(m), grounded: !m.aerial, vy: m.aerial ? 0.001 : 0, special: !!m.special, slot: m.slot || null };
     }
     const loop = S.entry.slice(5);
     const cyc = (S.f % 60) / 60;

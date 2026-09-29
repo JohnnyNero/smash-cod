@@ -262,6 +262,29 @@ grabs, hitstun, ledge hangs, switching and respawns. Walking into someone nudges
 - Fighters past the screen edge (but inside the blast zones) show a bubble pinned to the edge
   with their initial and %, shrinking with distance.
 
+## Real game animations
+
+- `public/models/<species>.glb` are now the Sword/Shield-rigged Pokémon HOME meshes with 12-16
+  official Sword/Shield clips each (idle, idle_alt, walk, run, attack_physical(2),
+  attack_special(2), hurt, faint, roar, land, happy, and some drowse/sleep/angry), assembled from
+  github.com/rovenmelloul/Pokemon (Sword/Shield .egg rips) + github.com/Lilothestitch16/
+  Pokemon-HOME-GLB-Models (meshes), meshopt-compressed with WebP textures (~4 MB total). Game rips:
+  private hobby use only. The build scripts are kept in the session scratchpad
+  (`anim/conv/`); see docs/OSS_RESEARCH.md for sources.
+- `rig.js` clip mode: an AnimationMixer per fighter picks clips from game state with crossfades:
+  idle / walk / run (time-scaled to ground speed), land (jumpsquat, landing, getup), hurt
+  (hitstun, held), drowse/sleep, roar on Poké Ball send-out, happy at victory, and the physical
+  (normals) or special (specials) attack clips — the second variant for smashes, aerials and
+  up/down specials. Attack clips are paused and time-warped so their impact (38% / 34% into the
+  clip) lands on the move's first active frame; charging holds the wind-up.
+- Horizontal root motion (Origin/Waist x/z) is stripped from every clip at load so the physics
+  owns position; vertical hops stay.
+- The procedural pose rides on top in model space (`local' = pw⁻¹ · Qb R Qb⁻¹ · pw · local`,
+  parents first) at a strength per state (`clipLayer` in creature.js): none for idle/walk/run,
+  0.45 for attacks (the signature choreography adds per-move direction), 0.4 hitstun, 0.8 air,
+  full for shield / ledge / dodge / holding. Flips, spins, lunges, squash & stretch, tail/ear
+  springs and trails still apply.
+
 ## Real Pokémon models
 
 - `public/models/<species>.glb`: the six roster models from Pokemon-3D-api/assets (Draco-decoded,
