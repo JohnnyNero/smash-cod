@@ -220,6 +220,19 @@ export function buildRig(model, id, colors, makeMat) {
     if (dir.angleTo(target) > 0.35) d.C.setFromUnitVectors(dir, target);
   }
 
+  // A bone below a rest-corrected bone (the forearm under a T-posed arm we dropped to hang) must
+  // bend in the corrected frame, not the original T-pose frame, or an elbow "bend" about x just
+  // twists a sideways forearm along its own length. Ccorr = corrections of driven ancestors.
+  for (const d of drivers) {
+    const acc = new THREE.Quaternion();
+    for (let b = d.bone.parent; b; b = b.parent) {
+      const up = drivers.find((x) => x.bone === b);
+      if (up && up.C.w < 0.9999) acc.premultiply(up.C);
+    }
+    d.Cacc = acc;
+    d.CaccInv = acc.clone().invert();
+  }
+
   // Joints creature.js animates.
   for (const name of ['hips', 'torso', 'head', 'armL', 'armR', 'elbowL', 'elbowR', 'legL', 'legR', 'kneeL', 'kneeR', 'tail', 'earL', 'earR', 'jaw']) {
     model.j[name] = dummies[name] || (dummies[name] = new THREE.Object3D());
@@ -299,7 +312,8 @@ export function buildRig(model, id, colors, makeMat) {
         // second, so the target must not also be an input.)
         if (d.weight !== 1) tq.slerpQuaternions(ID, tq3, d.weight);
         else tq.copy(tq3);
-        // bone = P⁻¹ · R · C · P · qRest
+        // bone = P⁻¹ · (Cacc⁻¹ · R · Cacc) · C · P · qRest
+        tq.premultiply(d.CaccInv).multiply(d.Cacc);
         tq2.copy(d.Pinv).multiply(tq).multiply(d.C).multiply(d.P).multiply(d.qRest);
         d.bone.quaternion.copy(tq2);
       }
