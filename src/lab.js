@@ -240,6 +240,9 @@ export function startLab(game) {
       const v = view(sim);
       S.model.root.position.set(0, 0, 0);
       S.model.update(v, S.playing ? sim : 0);
+      const limb = S.model.strikeLimb;
+      const lp = limb ? limb.getWorldPosition(new THREE.Vector3()) : null;
+      game.effects.limbTrail(0, lp, 0xffffff, S.model.h * 0.09, S.playing ? sim : 0);
       drawHitboxes();
       info();
       const h = S.model.h;

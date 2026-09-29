@@ -1059,6 +1059,7 @@ export class Game {
       if (!a.active || a.state !== 'attack' || !a.move || !a.move.hitboxes || a.curF < 0) continue;
       for (const hb of a.move.hitboxes) {
         if (hb.f[0] !== a.curF || hb.grab || !hb.dmg) continue;
+        if (a.model.strikeLimb) continue; // a limb trail already traces this attack
         const color = a.move.special && a.move.type ? hexColor(TYPE_COLORS[a.move.type] || '#ffffff') : 0xffffff;
         const c = a.center;
         this.effects.swoosh(c.x, c.y, a.pos.x + hb.x * a.facing, a.pos.y + hb.y, hb.r, color);
@@ -1495,6 +1496,16 @@ export class Game {
         const [x, y] = lerpPos(f.px, f.py, f.pos.x, f.pos.y);
         m.root.position.set(x, y, 0);
         m.update(this.fighterView(f), dt);
+        // Motion trail following the striking limb of a signature attack.
+        const limb = m.strikeLimb;
+        let lp = null;
+        if (limb) {
+          limb.getWorldPosition(this._lp || (this._lp = new THREE.Vector3()));
+          lp = this._lp;
+        }
+        const mv = f.move;
+        const tcol = mv && mv.special && mv.type ? hexColor(TYPE_COLORS[mv.type] || '#ffffff') : 0xffffff;
+        this.effects.limbTrail(i, lp, tcol, f.h * 0.09, dt);
         if (m.footstep) {
           m.footstep = false;
           this.effects.puff(x - f.facing * 0.1, y, -f.facing, 1);

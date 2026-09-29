@@ -214,6 +214,16 @@ target) now always runs: RenderPass -> bloom (high quality only) -> ink -> Outpu
   real frame data; each key eases in with snap / smooth / back / linear. Smash charging holds the
   wind-up. Moves without one fall back to the generic procedural animation.
 - Attack auras on the real models are a glow in the species' own colour (not a bubble).
+- Second choreography pass: signature aerials, up/down smashes and dash attacks (back kicks,
+  tail sweeps and tail lashes, overhead claw swings, double-foot stomps, scissor kick, roars,
+  rising palm, split kick, shell turn). Each archetype names its striking limb.
+- **Limb trails:** during a signature strike, a tapered additive ribbon follows the named limb's
+  bone (hand, foot, head or tail tip) through the swing (`Effects.limbTrail`), replacing the
+  generic hitbox arc for that move.
+- **Planted feet:** grounded lunges swing the legs back by the lunge so feet don't skate forward.
+- **Hit reactions:** for the first ~20 frames of hitstun the pose depends on launch direction:
+  arched back when sent up, folded around the blow when sent sideways, crumpled when spiked. Big
+  launches (speed > 13) fly aligned to the trajectory, head leading, before tumbling.
 - **Animation lab (`?lab`):** one Pokémon big on screen; pick species and any move or movement
   loop; play / pause / step frames / scrub / 1x-0.1x; live hitboxes (red, blue for grabs); frame
   number, phase (startup / ACTIVE / end lag), phase-space u, and whether the move is SIGNATURE or

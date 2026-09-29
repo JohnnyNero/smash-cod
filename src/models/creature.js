@@ -253,6 +253,14 @@ export class CreatureModel {
     return ankle;
   }
 
+  // The object at the business end of a limb, for motion trails.
+  limbObject(name) {
+    if (this.parts.limb) return this.parts.limb(name);
+    const j = this.j;
+    const map = { handR: j.elbowR || j.armR, handL: j.elbowL || j.armL, footR: j.kneeR || j.legR, footL: j.kneeL || j.legL, head: j.head, tail: j.tail };
+    return map[name] || null;
+  }
+
   // Poké Ball entrance: grow in from a white flash. Recall: shrink away in a red flash.
   appear() { this.appearT = 0; }
   recall() { this.recallT = 0; }
@@ -489,6 +497,29 @@ export class CreatureModel {
       o.elbowR.x = -0.6 - Math.cos(t * 8) * 0.3;
       o.tail.x = 0.8 * back;
       stretch = v.flash * 0.1;
+      // Reaction by launch direction for the first moments after the hit: arched back when sent
+      // upward, folded around the blow when sent sideways, crumpled when spiked.
+      const sp = Math.hypot(v.vx, v.vy) || 1;
+      const up = v.vy / sp;
+      const fresh = Math.max(0, 1 - v.sf / 20);
+      if (fresh > 0) {
+        if (up > 0.6) {
+          o.torso.x += fresh * (-0.8 - o.torso.x); o.head.x += fresh * (-0.7 - o.head.x);
+          o.armL.x += fresh * (-0.6 - o.armL.x); o.armR.x += fresh * (-0.6 - o.armR.x);
+          o.armL.z += fresh * 0.7; o.armR.z -= fresh * 0.7;
+          o.legL.x += fresh * (0.4 - o.legL.x); o.legR.x += fresh * (0.3 - o.legR.x);
+        } else if (up < -0.4) {
+          curl = 1 - 0.15 * fresh;
+          o.torso.x += fresh * (0.8 - o.torso.x); o.head.x += fresh * (0.5 - o.head.x);
+          o.kneeL.x += fresh * (1.5 - o.kneeL.x); o.kneeR.x += fresh * (1.5 - o.kneeR.x);
+        } else {
+          o.torso.x += fresh * (0.75 - o.torso.x); o.head.x += fresh * (0.4 - o.head.x);
+          o.armL.x += fresh * (0.6 - o.armL.x); o.armR.x += fresh * (0.6 - o.armR.x);
+          o.legL.x += fresh * (-0.7 - o.legL.x); o.legR.x += fresh * (-0.5 - o.legR.x);
+          o.kneeL.x += fresh * (1 - o.kneeL.x); o.kneeR.x += fresh * (1 - o.kneeR.x);
+          o.jaw.x = 0.5 * fresh;
+        }
+      }
     } else if (v.state === 'ledge') {
       o.armL.x = o.armR.x = -3.0;
       o.legL.x = -0.3 + Math.sin(t * 2.5) * 0.25;
@@ -553,6 +584,8 @@ export class CreatureModel {
         stretch = P.stretch || 0;
         aura = P.aura || 0;
         this.choreoJaw = !!P.jaw;
+        const u = phaseU(p, A, B);
+        this.strikeLimb = ch.limb && !v.charging && u > 0.3 && u < 0.62 ? this.limbObject(ch.limb) : null;
       } else switch (v.anim) {
         case 'jab':
           o.armR.x = 0.6 * a - 1.9 * s;
@@ -900,6 +933,12 @@ export class CreatureModel {
 
     // ---- two-bone IK: when the body dips while standing, the knees bend so the feet stay on
     // the floor instead of sinking into it (crouches, landings, wind-ups, the idle breath).
+    // Grounded lunges: swing the legs back by the lunge so the feet stay planted.
+    if (v.state === 'attack' && v.grounded && lunge) {
+      const kk = Math.atan2(lunge * this.h, this.h * 0.45);
+      o.legL.x += kk;
+      o.legR.x += kk;
+    }
     const standing = (grounded || v.state === 'shield' || v.state === 'holding' || (v.grounded && (v.state === 'attack' || v.state === 'dodge')))
       && v.state !== 'sleep' && !v.victory;
     if (standing && bodyY < 0) {
@@ -914,6 +953,8 @@ export class CreatureModel {
         o[knee].x += bendK;
       }
     }
+
+    if (v.state !== 'attack') this.strikeLimb = null;
 
     // ---- jaw (rigged models): open on strikes, roars, hits and cheers
     if (v.state === 'attack' && v.anim && !this.choreoJaw) {
@@ -947,8 +988,13 @@ export class CreatureModel {
     o.earR.x += earS * 0.8;
 
     // ---- tumble and zip spin around the body centre
-    if (v.tumble && (v.state === 'hitstun' || v.state === 'air')) {
-      spin = this.spinner.rotation.z - Math.sign(v.vx || 1) * dt * Math.min(18, 6 + Math.hypot(v.vx, v.vy) * 0.5);
+    const launchSpeed = Math.hypot(v.vx, v.vy);
+    if (v.state === 'hitstun' && launchSpeed > 13 && v.sf < 16) {
+      // Big launches: fly stiffly along the trajectory first (head leading), then tumble.
+      const target = Math.atan2(v.vy, v.vx) - Math.PI / 2;
+      spin = this.spinner.rotation.z + wrap(target - this.spinner.rotation.z) * (1 - Math.exp(-22 * dt));
+    } else if (v.tumble && (v.state === 'hitstun' || v.state === 'air')) {
+      spin = this.spinner.rotation.z - Math.sign(v.vx || 1) * dt * Math.min(18, 6 + launchSpeed * 0.5);
     }
     if (spin !== null) this.spinner.rotation.z = spin;
     else this.spinner.rotation.z = damp(wrap(this.spinner.rotation.z), 0, 14, dt);

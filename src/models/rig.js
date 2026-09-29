@@ -241,6 +241,19 @@ export function buildRig(model, id, colors, makeMat) {
     rig: true,
     feet,
     allFours: id === 'pikachu',
+    // Bone at the business end of a limb (motion trails).
+    limb(name) {
+      const pick = (...ns) => ns.map((n) => bones[side(n)] || bones[n]).find(Boolean) || null;
+      switch (name) {
+        case 'handR': return pick('RHand', 'RForeArm');
+        case 'handL': return pick('LHand', 'LForeArm');
+        case 'footR': return pick('RFoot', 'RLeg');
+        case 'footL': return pick('LFoot', 'LLeg');
+        case 'head': return pick('Head');
+        case 'tail': return pick('Tail7', 'Tail6', 'Tail5', 'Tail4', 'Tail3', 'Tail2', 'Tail1', 'Tail');
+        default: return null;
+      }
+    },
     extra,
     update(v, t, dt, springs) { if (extra) extra.update(v, t, dt, springs); },
     quadruped: quad,

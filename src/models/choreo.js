@@ -119,7 +119,88 @@ const ARCH = {
     [0.85, { rotY: 12.566 }, 'smooth'],
     [1, { rotY: 12.566 }, 'smooth'],
   ],
+  // Back kick (bair): tuck, look back, drive both feet out behind.
+  backkick: [
+    [0.3, { legL: [-0.9, 0, 0], legR: [-0.9, 0, 0], kneeL: [1.6, 0, 0], kneeR: [1.6, 0, 0], torso: [0.3, 0, 0], head: [0, 0.6, 0], tail: [0.3, 0, 0] }, 'smooth'],
+    [0.4, { legL: [1.5, 0, 0], legR: [1.3, 0, 0], kneeL: [0.1, 0, 0], kneeR: [0.2, 0, 0], torso: [0.55, 0, 0], head: [0, 0.8, 0], tail: [-0.4, 0, 0], lunge: -0.12 }, 'snap'],
+    [0.6, { legL: [1.45, 0, 0], legR: [1.25, 0, 0], kneeL: [0.15, 0, 0], kneeR: [0.25, 0, 0], torso: [0.5, 0, 0], head: [0, 0.7, 0], lunge: -0.12 }, 'linear'],
+    [1, {}, 'smooth'],
+  ],
+  // Low full-circle tail sweep (down smash).
+  tailsweep: [
+    [0.3, { bodyY: -0.12, curl: 0.92, kneeL: [0.8, 0, 0], kneeR: [0.8, 0, 0], torso: [0.3, 0, 0], tail: [-0.3, 0, 0.5] }, 'smooth'],
+    [0.4, { rotY: 3.4, tail: [0, 0, -0.9], bodyY: -0.12, curl: 0.92, torso: [0.35, 0, 0], kneeL: [0.8, 0, 0], kneeR: [0.8, 0, 0], aura: 0.7 }, 'snap'],
+    [0.6, { rotY: 5.8, tail: [0, 0, -0.7], bodyY: -0.1, torso: [0.3, 0, 0], kneeL: [0.7, 0, 0], kneeR: [0.7, 0, 0], aura: 0.4 }, 'linear'],
+    [0.75, { rotY: 6.283 }, 'smooth'],
+    [1, { rotY: 6.283 }, 'smooth'],
+  ],
+  // Half-turn tail lash behind (bair for long-tailed Pokémon).
+  tailback: [
+    [0.3, { rotY: 0.4, tail: [0.2, 0, 0.8], head: [0, -0.3, 0], legL: [-0.5, 0, 0], kneeL: [1, 0, 0], kneeR: [1, 0, 0] }, 'smooth'],
+    [0.4, { rotY: -0.9, tail: [0.3, 0, -1.0], torso: [0.2, 0, 0], head: [0, 0.5, 0] }, 'snap'],
+    [0.6, { rotY: -1.0, tail: [0.2, 0, -0.8], torso: [0.2, 0, 0], head: [0, 0.5, 0] }, 'linear'],
+    [1, {}, 'smooth'],
+  ],
+  // Overhead swing: both claws raised, then brought down in front (fair / smash).
+  overhead: [
+    [0.3, { armL: [-2.8, 0, 0.3], armR: [-2.8, 0, -0.3], elbowL: [-0.5, 0, 0], elbowR: [-0.5, 0, 0], torso: [-0.35, 0, 0], head: [-0.2, 0, 0], legL: [-0.4, 0, 0], legR: [-0.4, 0, 0], kneeL: [1, 0, 0], kneeR: [1, 0, 0] }, 'smooth'],
+    [0.4, { armL: [0.6, 0, 0.2], armR: [0.6, 0, -0.2], elbowL: [-0.2, 0, 0], elbowR: [-0.2, 0, 0], torso: [0.6, 0, 0], head: [0.3, 0, 0], legL: [0.3, 0, 0], legR: [0.3, 0, 0], kneeL: [0.5, 0, 0], kneeR: [0.5, 0, 0], jaw: [0.4, 0, 0], lunge: 0.08 }, 'snap'],
+    [0.6, { armL: [0.75, 0, 0.2], armR: [0.75, 0, -0.2], torso: [0.65, 0, 0], head: [0.3, 0, 0], legL: [0.3, 0, 0], legR: [0.3, 0, 0], kneeL: [0.5, 0, 0], kneeR: [0.5, 0, 0], jaw: [0.2, 0, 0], lunge: 0.08 }, 'linear'],
+    [1, {}, 'smooth'],
+  ],
+  // Stomp straight down with both feet (dair).
+  stompdown: [
+    [0.3, { legL: [-1.2, 0, 0], legR: [-1.2, 0, 0], kneeL: [1.9, 0, 0], kneeR: [1.9, 0, 0], torso: [0.2, 0, 0], armL: [-1.6, 0, 0.4], armR: [-1.6, 0, -0.4], bodyY: 0.08 }, 'smooth'],
+    [0.4, { legL: [0.15, 0, 0], legR: [0.15, 0, 0], kneeL: [0.05, 0, 0], kneeR: [0.05, 0, 0], torso: [-0.1, 0, 0], head: [0.4, 0, 0], armL: [-2.4, 0, 0.4], armR: [-2.4, 0, -0.4], stretch: 0.12, bodyY: -0.05 }, 'snap'],
+    [0.6, { legL: [0.15, 0, 0], legR: [0.15, 0, 0], kneeL: [0.1, 0, 0], kneeR: [0.1, 0, 0], head: [0.4, 0, 0], armL: [-2.3, 0, 0.4], armR: [-2.3, 0, -0.4], stretch: 0.08 }, 'linear'],
+    [1, {}, 'smooth'],
+  ],
+  // Scissor kick straight up (uair).
+  scissor: [
+    [0.3, { legR: [0.6, 0, 0], kneeR: [1.2, 0, 0], legL: [-0.3, 0, 0], kneeL: [0.8, 0, 0], torso: [0.25, 0, 0] }, 'smooth'],
+    [0.4, { legR: [-2.6, 0, 0], kneeR: [0.1, 0, 0], legL: [0.5, 0, 0], kneeL: [0.4, 0, 0], torso: [-0.5, 0, 0], head: [-0.5, 0, 0], rotX: -0.5, armL: [0.4, 0, 0.5], armR: [0.4, 0, -0.5] }, 'snap'],
+    [0.6, { legR: [-2.5, 0, 0], kneeR: [0.15, 0, 0], legL: [0.5, 0, 0], torso: [-0.45, 0, 0], head: [-0.5, 0, 0], rotX: -0.5, armL: [0.4, 0, 0.5], armR: [0.4, 0, -0.5] }, 'linear'],
+    [1, {}, 'smooth'],
+  ],
+  // Roar upward: crouch, then burst up, arms and head thrown to the sky (up smash / uair).
+  roar: [
+    [0.3, { torso: [0.4, 0, 0], head: [0.4, 0, 0], armL: [0.4, 0, 0], armR: [0.4, 0, 0], kneeL: [0.8, 0, 0], kneeR: [0.8, 0, 0], bodyY: -0.1, stretch: -0.12 }, 'smooth'],
+    [0.4, { torso: [-0.45, 0, 0], head: [-0.8, 0, 0], armL: [-2.7, 0, 0.5], armR: [-2.7, 0, -0.5], elbowL: [-0.2, 0, 0], elbowR: [-0.2, 0, 0], jaw: [0.8, 0, 0], tail: [0.8, 0, 0], bodyY: 0.12, stretch: 0.14, aura: 0.8 }, 'snap'],
+    [0.6, { torso: [-0.4, 0, 0], head: [-0.75, 0, 0], armL: [-2.6, 0, 0.5], armR: [-2.6, 0, -0.5], jaw: [0.6, 0, 0], tail: [0.6, 0, 0], bodyY: 0.1, stretch: 0.06, aura: 0.5 }, 'linear'],
+    [1, {}, 'smooth'],
+  ],
+  // Rising palm (Lucario's up smash).
+  uppalm: [
+    [0.3, { armR: [0.6, 0, 0], elbowR: [-1.8, 0, 0], armL: [-0.4, 0, 0.3], bodyY: -0.12, kneeL: [0.9, 0, 0], kneeR: [0.9, 0, 0], torso: [0.3, -0.3, 0], aura: 0.4 }, 'smooth'],
+    [0.4, { armR: [-3.0, 0, 0], elbowR: [0, 0, 0], armL: [-0.3, 0, 0.4], torso: [-0.3, 0.3, 0], head: [-0.6, 0, 0], bodyY: 0.1, stretch: 0.1, aura: 1 }, 'snap'],
+    [0.6, { armR: [-3.0, 0, 0], armL: [-0.3, 0, 0.4], torso: [-0.25, 0.3, 0], head: [-0.55, 0, 0], bodyY: 0.08, aura: 0.6 }, 'linear'],
+    [1, {}, 'smooth'],
+  ],
+  // Split kick both ways (Lucario's down smash).
+  splitkick: [
+    [0.3, { bodyY: -0.05, legL: [-0.5, 0, 0], legR: [0.5, 0, 0], kneeL: [1.2, 0, 0], kneeR: [1.2, 0, 0], armL: [-0.8, 0, 0], armR: [-0.8, 0, 0] }, 'smooth'],
+    [0.4, { bodyY: -0.18, legL: [-1.3, 0, 0], legR: [1.3, 0, 0], kneeL: [0.05, 0, 0], kneeR: [0.05, 0, 0], torso: [0.2, 0, 0], armL: [-0.6, 0, 1.0], armR: [-0.6, 0, -1.0], stretch: -0.05, aura: 0.8 }, 'snap'],
+    [0.6, { bodyY: -0.17, legL: [-1.25, 0, 0], legR: [1.25, 0, 0], torso: [0.2, 0, 0], armL: [-0.6, 0, 1.0], armR: [-0.6, 0, -1.0], aura: 0.5 }, 'linear'],
+    [1, {}, 'smooth'],
+  ],
+  // Turn the shell into them (Blastoise's bair).
+  shellback: [
+    [0.3, { rotY: -0.3, curl: 0.9, head: [0.3, 0, 0] }, 'smooth'],
+    [0.4, { rotY: 2.9, curl: 0.88, head: [0.4, 0, 0], lunge: -0.1 }, 'snap'],
+    [0.6, { rotY: 3.1, curl: 0.88, head: [0.4, 0, 0], lunge: -0.1 }, 'linear'],
+    [0.9, { rotY: 6.283 }, 'smooth'],
+    [1, { rotY: 6.283 }, 'smooth'],
+  ],
 };
+
+// The limb that does the hitting in each archetype (for motion trails).
+const LIMB = {
+  punch: 'handR', headbutt: 'head', tailwhip: 'tail', claw: 'handR', roundhouse: 'footR', bite: 'head',
+  stomp: 'handL', bodyslam: 'head', palm: 'handR', grinlunge: 'head', swipe: 'handR', headtoss: 'head',
+  backkick: 'footL', tailsweep: 'tail', tailback: 'tail', overhead: 'handR', stompdown: 'footR',
+  scissor: 'footR', roar: 'head', uppalm: 'handR', splitkick: 'footR', shellback: null, shellspin: null,
+};
+for (const [k, v] of Object.entries(ARCH)) v.limb = LIMB[k] ?? null;
 
 // Heavier variants: bigger wind-up and follow-through for smash attacks.
 function heavier(keys, k = 1.25, aura = 0.8) {
@@ -130,16 +211,36 @@ function heavier(keys, k = 1.25, aura = 0.8) {
     return [u, p, ease];
   });
 }
+const heavy = (keys, k, aura) => Object.assign(heavier(keys, k, aura), { limb: keys.limb });
 
 // ---------------------------------------------------------------- per species
 // anim name (from moves.js) -> choreography. Anything not listed uses the generic animation.
+const A = ARCH;
 const CHOREO = {
-  pikachu: { jab: ARCH.headbutt, ftilt: ARCH.tailwhip, fsmash: heavier(ARCH.headbutt, 1.3), utilt: ARCH.headtoss },
-  charizard: { jab: ARCH.claw, ftilt: ARCH.tailwhip, fsmash: heavier(ARCH.bite, 1.2), dtilt: ARCH.claw, utilt: ARCH.headtoss },
-  blastoise: { jab: ARCH.punch, ftilt: ARCH.bodyslam, fsmash: heavier(ARCH.bodyslam, 1.1), dsmash: ARCH.shellspin, utilt: ARCH.headtoss },
-  venusaur: { jab: ARCH.bite, ftilt: ARCH.bite, fsmash: heavier(ARCH.bite, 1.25), dtilt: ARCH.stomp, dsmash: heavier(ARCH.stomp, 1.2), utilt: ARCH.headtoss },
-  gengar: { jab: ARCH.swipe, ftilt: ARCH.claw, fsmash: ARCH.grinlunge, utilt: ARCH.headtoss },
-  lucario: { jab: ARCH.punch, ftilt: ARCH.roundhouse, fsmash: ARCH.palm },
+  pikachu: {
+    jab: A.headbutt, ftilt: A.tailwhip, fsmash: heavy(A.headbutt, 1.3), utilt: A.headtoss, dsmash: A.tailsweep,
+    dash: A.headbutt, fair: A.headbutt, bair: A.backkick,
+  },
+  charizard: {
+    jab: A.claw, ftilt: A.tailwhip, fsmash: heavy(A.bite, 1.2), dtilt: A.claw, utilt: A.headtoss, usmash: A.roar,
+    dsmash: A.tailsweep, dash: A.bodyslam, fair: A.overhead, bair: A.tailback, uair: A.roar, dair: A.stompdown,
+  },
+  blastoise: {
+    jab: A.punch, ftilt: A.bodyslam, fsmash: heavy(A.bodyslam, 1.1), dsmash: A.shellspin, utilt: A.headtoss,
+    usmash: heavy(A.roar, 1.1), dash: A.bodyslam, fair: A.headbutt, bair: A.shellback, uair: A.roar, dair: A.stompdown, nair: A.shellspin,
+  },
+  venusaur: {
+    jab: A.bite, ftilt: A.bite, fsmash: heavy(A.bite, 1.25), dtilt: A.stomp, dsmash: heavy(A.stomp, 1.2), utilt: A.headtoss,
+    usmash: heavy(A.roar, 1.15), dash: A.headbutt, fair: A.headbutt, bair: A.backkick, uair: A.headtoss, dair: A.stompdown,
+  },
+  gengar: {
+    jab: A.swipe, ftilt: A.claw, fsmash: A.grinlunge, utilt: A.headtoss, usmash: A.roar, dsmash: heavy(A.overhead, 1.1),
+    dash: A.grinlunge, fair: A.overhead, bair: A.backkick, uair: A.roar, dair: A.stompdown,
+  },
+  lucario: {
+    jab: A.punch, ftilt: A.roundhouse, fsmash: A.palm, usmash: A.uppalm, dsmash: A.splitkick, fair: A.palm,
+    bair: A.backkick, uair: A.scissor, dair: A.stompdown,
+  },
 };
 
 export const choreoFor = (species, anim) => (CHOREO[species] && CHOREO[species][anim]) || null;

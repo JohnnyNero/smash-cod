@@ -159,6 +159,58 @@ export class Effects {
     this.light(x, y, color, 120, 0.6);
   }
 
+  // Motion trail that follows a striking limb: a tapered ribbon through the limb's last few
+  // positions, fading from the tip. One per fighter slot; call with the limb's world position
+  // (or null when it isn't striking) every frame.
+  limbTrail(slot, pos, color, width, dt) {
+    this.trails ||= {};
+    let tr = this.trails[slot];
+    if (!tr) {
+      const N = 16;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 2 * 3), 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N * 2 * 4), 4));
+      const idx = [];
+      for (let i = 0; i < N - 1; i++) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
+      geo.setIndex(idx);
+      const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
+      }));
+      mesh.frustumCulled = false;
+      mesh.renderOrder = 6;
+      this.scene.add(mesh);
+      tr = this.trails[slot] = { mesh, N, pts: [] };
+    }
+    for (const p of tr.pts) p.age += dt;
+    if (pos) tr.pts.unshift({ x: pos.x, y: pos.y, age: 0 });
+    tr.pts = tr.pts.filter((p) => p.age < 0.14).slice(0, tr.N);
+    const P = tr.mesh.geometry.attributes.position;
+    const C = tr.mesh.geometry.attributes.color;
+    const c = tmpColor.set(color);
+    const n = tr.pts.length;
+    for (let i = 0; i < tr.N; i++) {
+      const p = tr.pts[Math.min(i, n - 1)];
+      if (!p || n < 2) { P.setXYZ(i * 2, 0, -99, 0); P.setXYZ(i * 2 + 1, 0, -99, 0); continue; }
+      const q = tr.pts[Math.min(i + 1, n - 1)];
+      const r = tr.pts[Math.min(Math.max(i - 1, 0), n - 1)];
+      let dx = r.x - q.x;
+      let dy = r.y - q.y;
+      const l = Math.hypot(dx, dy) || 1;
+      dx /= l; dy /= l;
+      const k = 1 - i / Math.max(1, n - 1);
+      const life = Math.max(0, 1 - p.age / 0.14);
+      const w = width * (0.25 + 0.75 * k) * life;
+      P.setXYZ(i * 2, p.x - dy * w, p.y + dx * w, 0.35);
+      P.setXYZ(i * 2 + 1, p.x + dy * w, p.y - dx * w, 0.35);
+      const a = 0.85 * k * life;
+      C.setXYZW(i * 2, c.r, c.g, c.b, a);
+      C.setXYZW(i * 2 + 1, c.r, c.g, c.b, a);
+    }
+    P.needsUpdate = true;
+    C.needsUpdate = true;
+    tr.mesh.visible = n >= 2;
+  }
+
   // Dust kicked up by the feet, blown in direction dir (-1 / 1).
   puff(x, y, dir, count = 3) {
     for (let i = 0; i < count; i++) {
@@ -396,6 +448,7 @@ export class Effects {
     for (const l of this.lights) { l.userData.life = 0; l.intensity = 0; }
     for (const b of this.balls) this.scene.remove(b.g);
     this.balls.length = 0;
+    for (const tr of Object.values(this.trails || {})) { tr.pts = []; tr.mesh.visible = false; }
     for (const arr of [this.rings, this.beams, this.callouts, this.swooshes, this.glints]) {
       for (const o of arr) {
         this.scene.remove(o);
